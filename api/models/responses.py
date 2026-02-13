@@ -12,6 +12,13 @@ class MarketData(BaseModel):
     change_percent: float = Field(..., description="Percentage change")
 
 
+class ForexData(BaseModel):
+    """Forex exchange rate data."""
+    
+    rate: float = Field(..., description="Exchange rate")
+    change_percent: float = Field(..., description="Percentage change")
+
+
 class VIXData(BaseModel):
     """VIX volatility index data."""
     
@@ -26,7 +33,7 @@ class GlobalContextResponse(BaseModel):
     dow_jones: MarketData = Field(..., description="Dow Jones index data")
     vix: VIXData = Field(..., description="VIX volatility index data")
     gold: MarketData = Field(..., description="Gold futures data")
-    usd_inr: MarketData = Field(..., description="USD/INR exchange rate data")
+    usd_inr: ForexData = Field(..., description="USD/INR exchange rate data")
     crude_oil: MarketData = Field(..., description="Crude oil futures data")
     timestamp: str = Field(..., description="Timestamp in ISO format")
     
@@ -40,7 +47,7 @@ class GlobalContextResponse(BaseModel):
                 "gold": {"price": 2024.30, "change_percent": -0.15},
                 "usd_inr": {"rate": 83.25, "change_percent": 0.08},
                 "crude_oil": {"price": 78.45, "change_percent": 1.20},
-                "timestamp": "2026-02-13T14:30:00+05:30"
+                "timestamp": "2026-02-12T14:30:00+05:30"
             }
         }
 

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends
 
-from api.models.responses import GlobalContextResponse, MarketData, VIXData
+from api.models.responses import GlobalContextResponse, MarketData, VIXData, ForexData
 from services.yahoo_finance_service import YahooFinanceService
 from config.settings import settings
 from utils.logger import get_logger
@@ -98,9 +98,14 @@ async def get_global_context(
                 failed_symbols.append(symbol)
                 continue
             
-            # Special handling for VIX (no change_percent needed)
+            # Special handling for VIX and USD/INR
             if key == "vix":
                 response_data[key] = VIXData(value=price).model_dump()
+            elif key == "usd_inr":
+                response_data[key] = ForexData(
+                    rate=price,
+                    change_percent=change_percent or 0.0
+                ).model_dump()
             else:
                 response_data[key] = MarketData(
                     price=price,

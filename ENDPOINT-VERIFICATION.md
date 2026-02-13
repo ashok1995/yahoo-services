@@ -37,7 +37,7 @@ curl http://localhost:8085/api/v1/global-context
   "dow_jones": {"price": 49451.98, "change_percent": -1.34},
   "vix": {"value": 20.78},
   "gold": {"price": 4995.1, "change_percent": 0.94},
-  "usd_inr": {"price": 90.64, "change_percent": 0.13},
+  "usd_inr": {"rate": 90.64, "change_percent": 0.13},
   "crude_oil": {"price": 62.93, "change_percent": 0.14},
   "timestamp": "2026-02-13T15:07:31.259733"
 }
@@ -276,7 +276,7 @@ Current format is:
   "dow_jones": {"price": float, "change_percent": float},
   "vix": {"value": float},
   "gold": {"price": float, "change_percent": float},
-  "usd_inr": {"price": float, "change_percent": float},
+  "usd_inr": {"rate": float, "change_percent": float},
   "crude_oil": {"price": float, "change_percent": float},
   "timestamp": "ISO8601 string"
 }
@@ -327,16 +327,30 @@ If you encounter any issues during testing:
 
 ## 🚀 Next Steps
 
-1. ✅ **Verify all endpoints work** using the test commands above
-2. ✅ **Test integration** with seed-stocks-service's GlobalContextCollector
+1. ✅ **Verify all endpoints work** — COMPLETED (2026-02-13)
+2. ⏳ **Integrate with seed-stocks-service** — See [INTEGRATION-PLAN.md](./docs/integration/INTEGRATION-PLAN.md)
 3. ⏳ **Deploy to staging** (port 8285) for pre-production testing
 4. ⏳ **Deploy to production** (port 8185) when ready
 
 ---
 
-**Service Status**: ✅ **READY FOR TESTING**  
+## ✅ Verification Complete (2026-02-13)
+
+**Tested by**: Integration verification script  
+**All tests**: PASSED ✅
+
+| Test | Status | Response Time | Notes |
+|------|--------|---------------|-------|
+| Health check | ✅ | <500ms | Service healthy |
+| Global context | ✅ | 3s (first), <500ms (cached) | All 7 symbols returned |
+| Fundamentals batch | ✅ | <700ms | P/E, P/B, market cap returned |
+| Cache working | ✅ | 2nd call 5x faster | Redis caching confirmed |
+
+---
+
+**Service Status**: ✅ **READY FOR INTEGRATION**  
 **All endpoints operational and verified**  
-**Waiting for integration test results from seed-stocks-service team**
+**Next: Integrate into seed-stocks-service (Phase 1A)**
 
 ---
 
