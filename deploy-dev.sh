@@ -48,10 +48,10 @@ fi
 
 # Step 2: Kill any process on port 8085
 echo -e "${YELLOW}[2/7]${NC} Checking port ${PORT}..."
-PID=$(lsof -ti:${PORT} 2>/dev/null)
-if [ ! -z "$PID" ]; then
+if lsof -ti:${PORT} > /dev/null 2>&1; then
+    PID=$(lsof -ti:${PORT})
     echo -e "${YELLOW}⚠️  Port ${PORT} is in use by PID ${PID}. Killing process...${NC}"
-    kill -9 $PID 2>/dev/null || true
+    lsof -ti:${PORT} | xargs kill -9 2>/dev/null || true
     sleep 1
     echo -e "${GREEN}✅ Port ${PORT} is now free${NC}"
 else
