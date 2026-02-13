@@ -1,47 +1,45 @@
-# Yahoo Finance Container Dockerfile
-# ===================================
+# Yahoo Services Dockerfile
+# Multi-stage build for production
 
-FROM python:3.11-slim
+# Build stage
+FROM python:3.13-slim as builder
 
-# Set working directory
 WORKDIR /app
-
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
-    g++ \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Copy requirements and install dependencies
 COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Runtime stage
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /root/.local
 
 # Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p logs config cache data
+# Make sure scripts are executable
+RUN chmod +x entrypoint.sh
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app && \
-    chown -R app:app /app
-USER app
+# Add user's local bin to PATH
+ENV PATH=/root/.local/bin:$PATH
 
-# Expose port
-EXPOSE 8014
+# Create logs directory
+RUN mkdir -p logs
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8014/health || exit 1
+# Expose ports (dev: 8085, prod: 8185, stage: 8285)
+EXPOSE 8085 8185 8285
 
-# Run the application
-CMD ["python", "main.py"] 
+# Set default environment
+ENV ENVIRONMENT=production
+
+# Use entrypoint script
+ENTRYPOINT ["./entrypoint.sh"]

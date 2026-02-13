@@ -1,61 +1,84 @@
 version: '3.8'
 
 services:
-  yahoo-finance-container:
-    build: .
-    container_name: yahoo-finance-api-container
+  # Development service
+  yahoo-services-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yahoo-services-dev
     ports:
-      - "8014:8014"
+      - "8085:8085"
     environment:
-      - HOST=0.0.0.0
-      - PORT=8014
-      - DEBUG=true
-      - LOG_LEVEL=INFO
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=2
-      - YAHOO_FINANCE_TIMEOUT=30
-      - YAHOO_FINANCE_RETRIES=3
-      - YAHOO_FINANCE_DELAY=1.0
-      - DAILY_REQUEST_LIMIT=2000
-      - MAX_CONCURRENT_REQUESTS=20
-      - REQUEST_TIMEOUT=30
-      - CACHE_TTL=1800
-      - QUOTE_CACHE_TTL=300
-      - HISTORICAL_CACHE_TTL=3600
-      - FUNDAMENTAL_CACHE_TTL=7200
+      - ENVIRONMENT=development
     volumes:
+      - .:/app
       - ./logs:/app/logs
-      - ./config:/app/config
-      - ./cache:/app/cache
-      - ./data:/app/data
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8014/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     networks:
-      - yahoo-finance-network
+      - yahoo-network
     depends_on:
       - redis
+    profiles:
+      - dev
 
-  # Redis for caching
-  redis:
-    image: redis:7-alpine
-    container_name: yahoo-finance-redis
+  # Staging service
+  yahoo-services-stage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yahoo-services-stage
     ports:
-      - "6382:6379"
+      - "8285:8285"
+    environment:
+      - ENVIRONMENT=staging
     volumes:
-      - redis_data:/data
+      - ./logs:/app/logs
     restart: unless-stopped
     networks:
-      - yahoo-finance-network
+      - yahoo-network
+    depends_on:
+      - redis
+    profiles:
+      - stage
+
+  # Production service
+  yahoo-services-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yahoo-services-prod
+    ports:
+      - "8185:8185"
+    environment:
+      - ENVIRONMENT=production
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - yahoo-network
+    depends_on:
+      - redis
+    profiles:
+      - prod
+
+  # Redis service (shared across environments)
+  redis:
+    image: redis:7-alpine
+    container_name: yahoo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - yahoo-network
+    command: redis-server --appendonly yes
 
 networks:
-  yahoo-finance-network:
+  yahoo-network:
     driver: bridge
 
 volumes:
-  redis_data: 
+  redis-data:
+    driver: local

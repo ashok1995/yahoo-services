@@ -67,6 +67,10 @@ async def lifespan(app: FastAPI):
         yahoo_finance_service = YahooFinanceService(yahoo_config, cache_service, rate_limiter)
         await yahoo_finance_service.initialize()
         
+        # Set service instances in route modules
+        global_context.set_yahoo_service(yahoo_finance_service)
+        fundamentals.set_yahoo_service(yahoo_finance_service)
+        
         logger.info("✅ All services initialized successfully")
         
     except Exception as e:
@@ -118,9 +122,8 @@ def get_yahoo_finance_service() -> YahooFinanceService:
     return yahoo_finance_service
 
 
-# Override dependency in route modules
-global_context.get_yahoo_service = get_yahoo_finance_service
-fundamentals.get_yahoo_service = get_yahoo_finance_service
+# Override dependency in route modules (will be set after services initialize)
+# This is done in the lifespan startup
 
 
 # Include routers

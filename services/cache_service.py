@@ -19,18 +19,14 @@ logger = logging.getLogger(__name__)
 
 class CacheConfig(BaseModel):
     """Cache configuration"""
-    redis_host: str = "redis"
+    redis_host: str = "localhost"
     redis_port: int = 6379
-    redis_db: int = 2
+    redis_db: int = 3
     redis_password: Optional[str] = None
     
     # Cache TTLs (in seconds)
-    default_ttl: int = 1800  # 30 minutes
-    quote_ttl: int = 300     # 5 minutes
-    historical_ttl: int = 3600  # 1 hour
-    fundamental_ttl: int = 7200  # 2 hours
-    statement_ttl: int = 86400   # 24 hours
-    search_ttl: int = 1800       # 30 minutes
+    global_context_ttl: int = 300  # 5 minutes
+    fundamentals_ttl: int = 86400  # 1 day
     
     # Cache settings
     max_cache_size: int = 10000
@@ -41,16 +37,12 @@ class CacheConfig(BaseModel):
         """Create configuration from environment variables"""
         import os
         return cls(
-            redis_host=os.getenv("REDIS_HOST", "redis"),
+            redis_host=os.getenv("REDIS_HOST", "localhost"),
             redis_port=int(os.getenv("REDIS_PORT", "6379")),
-            redis_db=int(os.getenv("REDIS_DB", "2")),
-            redis_password=os.getenv("REDIS_PASSWORD"),
-            default_ttl=int(os.getenv("CACHE_TTL", "1800")),
-            quote_ttl=int(os.getenv("QUOTE_CACHE_TTL", "300")),
-            historical_ttl=int(os.getenv("HISTORICAL_CACHE_TTL", "3600")),
-            fundamental_ttl=int(os.getenv("FUNDAMENTAL_CACHE_TTL", "7200")),
-            statement_ttl=int(os.getenv("STATEMENT_CACHE_TTL", "86400")),
-            search_ttl=int(os.getenv("SEARCH_CACHE_TTL", "1800")),
+            redis_db=int(os.getenv("REDIS_DB", "3")),
+            redis_password=os.getenv("REDIS_PASSWORD") or None,
+            global_context_ttl=int(os.getenv("CACHE_TTL_GLOBAL_CONTEXT", "300")),
+            fundamentals_ttl=int(os.getenv("CACHE_TTL_FUNDAMENTALS", "86400")),
             max_cache_size=int(os.getenv("MAX_CACHE_SIZE", "10000")),
             enable_compression=os.getenv("ENABLE_COMPRESSION", "false").lower() == "true"
         )
@@ -99,15 +91,12 @@ class CacheService:
     def _get_ttl(self, data_type: str) -> int:
         """Get TTL for data type"""
         ttl_map = {
-            "quote": self.config.quote_ttl,
-            "historical": self.config.historical_ttl,
-            "fundamental": self.config.fundamental_ttl,
-            "statement": self.config.statement_ttl,
-            "search": self.config.search_ttl,
-            "company": self.config.fundamental_ttl,
-            "statistics": self.config.quote_ttl
+            "quote": self.config.global_context_ttl,
+            "global_context": self.config.global_context_ttl,
+            "fundamental": self.config.fundamentals_ttl,
+            "fundamentals": self.config.fundamentals_ttl,
         }
-        return ttl_map.get(data_type, self.config.default_ttl)
+        return ttl_map.get(data_type, self.config.global_context_ttl)
     
     async def get(self, data_type: str, identifier: str) -> Optional[Dict[str, Any]]:
         """Get data from cache"""

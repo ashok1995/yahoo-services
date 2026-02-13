@@ -15,10 +15,17 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+# This will be set by main.py
+_yahoo_service: YahooFinanceService = None
+
+def set_yahoo_service(service: YahooFinanceService):
+    """Set Yahoo Finance service instance."""
+    global _yahoo_service
+    _yahoo_service = service
+
 def get_yahoo_service() -> YahooFinanceService:
-    """Dependency to get Yahoo Finance service (placeholder for DI)."""
-    # This will be injected from main.py
-    pass
+    """Dependency to get Yahoo Finance service."""
+    return _yahoo_service
 
 
 async def fetch_quote_data(
