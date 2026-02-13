@@ -11,7 +11,7 @@ import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
-import aioredis
+import redis.asyncio as aioredis
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
