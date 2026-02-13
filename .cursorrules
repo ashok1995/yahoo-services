@@ -1,0 +1,195 @@
+# Global Cursor Rules for Yahoo-Services
+
+## Project Context
+This is `yahoo-services` — a FastAPI microservice that provides ONLY data that Kite cannot provide (US indices, commodities, forex, fundamentals). Port 8014.
+
+## Git Workflow (MANDATORY)
+
+### Branching Strategy
+- **main** — Production-ready code only. Never work directly on main.
+- **develop** — Integration branch for features. Default branch for development.
+- **feature/<name>** — New features (e.g., `feature/global-context-endpoint`)
+- **bugfix/<name>** — Bug fixes (e.g., `bugfix/rate-limit-error`)
+- **hotfix/<name>** — Critical production fixes (merged to main and develop)
+
+### Workflow Rules
+1. **NEVER commit directly to main**
+2. All work happens in feature/bugfix/hotfix branches
+3. Feature branches created from `develop`
+4. Merge to `develop` first, then to `main` when ready for production
+5. Always create meaningful branch names: `feature/add-fundamentals-endpoint`
+
+### Example Workflow
+```bash
+git checkout develop
+git checkout -b feature/global-context-endpoint
+# ... work ...
+git commit -m "feat: add global context endpoint"
+git checkout develop
+git merge feature/global-context-endpoint
+# When ready for production:
+git checkout main
+git merge develop
+```
+
+## Core Development Principles
+
+### 1. Zero Redundancy
+- This service provides ONLY data Kite cannot provide
+- ❌ FORBIDDEN: Fetching NSE/BSE stock data (use Kite)
+- ✅ ALLOWED: US indices, commodities, forex, fundamentals
+
+### 2. Minimal Scope
+- Only 4 endpoints: `/api/v1/global-context`, `/api/v1/fundamentals/batch`, `/api/v1/alpha-vantage/global-context`, `/health`
+- No demos, no example code, production-only
+- No tests unless explicitly requested
+
+### 3. Architecture Standards
+- **Config-driven**: All settings via `config/settings.py` (pydantic-settings)
+- **NO hardcoded values**: Everything configurable via environment variables
+- **Pydantic models**: All requests/responses use Pydantic for validation
+- **Structured logging**: JSON logs to `logs/yahoo-services.log`
+- **Clean separation**: routes → services → external APIs
+
+### 4. Code Quality (State-of-the-art)
+- **DRY**: If logic is used 2+ times, extract to function
+- **Type hints**: Mandatory on all functions
+- **Single responsibility**: Each module has one clear purpose
+- **Scan before writing**: Look for similar logic, prefer refactoring
+- **Minimal code**: Maximum reusability
+
+### 5. Logging Requirements
+- Write to file: `logs/yahoo-services.log`
+- JSON format with: timestamp, level, service, module, message, context
+- Log rotation: 10MB per file, keep 5 files
+- NO print statements — use logger
+
+### 6. Configuration Management
+- All config via `config/settings.py` using pydantic-settings
+- Load from `.env` file
+- NO hardcoded values in scripts
+- Validate all config on startup
+
+## File Structure (FastAPI Best Practices)
+
+```
+yahoo-services/
+├── main.py                          # FastAPI app entry point
+├── api/
+│   ├── routes/                      # HTTP endpoints
+│   │   ├── global_context.py
+│   │   ├── fundamentals.py
+│   │   ├── alpha_vantage.py
+│   │   └── health.py
+│   └── models/                      # Pydantic models
+│       ├── requests.py
+│       └── responses.py
+├── services/                        # Business logic
+│   ├── yahoo_finance_service.py     # EXISTS
+│   ├── cache_service.py             # EXISTS
+│   ├── rate_limiter.py              # EXISTS
+│   └── alpha_vantage_service.py     # NEW
+├── config/
+│   └── settings.py                  # Centralized config
+├── utils/
+│   ├── logger.py                    # Structured logging
+│   └── exceptions.py                # Custom exceptions
+└── logs/                            # Log files
+```
+
+## Performance & Reliability
+
+### Caching Strategy
+- Global context: 5 minutes (matches call frequency)
+- Fundamentals: 1 day (fundamentals change slowly)
+- Cache keys: `yahoo:{endpoint}:{params_hash}`
+
+### Rate Limiting
+- Yahoo Finance: 100 req/min (conservative)
+- Alpha Vantage: 5 req/min (free tier)
+- Use exponential backoff on errors
+
+### Error Handling
+1. Yahoo rate-limited → Use cached data if available
+2. Yahoo unavailable → Try Alpha Vantage (if configured)
+3. Both fail → Return 503 with retry-after header
+
+## What NOT to Do (STRICTLY FORBIDDEN)
+
+❌ **Never work directly on main branch** — Always use feature/bugfix branches
+❌ **No demos or example endpoints** — Production code only
+❌ **No redundant Kite data** — Use Kite for NSE/BSE
+❌ **No hardcoded values** — Use config for everything
+❌ **No print statements** — Use structured logging
+❌ **No generic exceptions** — Use custom exception classes
+❌ **No untyped functions** — Type hints are mandatory
+❌ **No tests unless requested** — Focus on functionality
+❌ **No extra endpoints** — Only the 4 required endpoints
+
+## Port Management
+
+### Always Kill Process Using Target Port
+- Before starting service on port 8014, check and kill any process using that port
+- Use `lsof -ti:8014 | xargs kill -9` to kill by port, NOT by partial command name
+- This prevents conflicts with other services
+
+Example:
+```bash
+# Check if port 8014 is in use
+lsof -ti:8014
+
+# Kill process if port is in use
+lsof -ti:8014 | xargs kill -9
+
+# Then start service
+uvicorn main:app --host 0.0.0.0 --port 8014 --reload
+```
+
+## Integration with Seed-Stocks-Service
+
+This service is called by `seed-stocks-service`'s `GlobalContextCollector` every 5 minutes.
+
+### Critical: Response Format MUST Match
+
+```json
+{
+  "sp500": {"price": 5845.20, "change_percent": 0.45},
+  "nasdaq": {"price": 18234.50, "change_percent": 0.62},
+  "dow_jones": {"price": 44320.10, "change_percent": 0.28},
+  "vix": {"value": 13.45},
+  "gold": {"price": 2024.30, "change_percent": -0.15},
+  "usd_inr": {"rate": 83.25, "change_percent": 0.08},
+  "crude_oil": {"price": 78.45, "change_percent": 1.20},
+  "timestamp": "2026-02-12T14:30:00+05:30"
+}
+```
+
+**DO NOT change this format without updating seed-stocks-service.**
+
+## Dependencies (Minimal)
+
+```
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+yfinance==0.2.18
+redis==5.0.1
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+httpx==0.26.0
+```
+
+**NO additional packages unless absolutely necessary.**
+
+## Summary
+
+This is a focused microservice with clear scope:
+- ✅ Provides ONLY data Kite cannot (US indices, commodities, forex, fundamentals)
+- ✅ 4 endpoints, aggressive caching, production-grade error handling
+- ✅ Config-driven, structured logging, Pydantic models everywhere
+- ✅ Clean git workflow: feature branches → develop → main
+- ❌ No demos, no redundancy, no hardcoded values, no working on main directly
+
+---
+
+**For detailed implementation rules, see `.cursor/RULE.md`**

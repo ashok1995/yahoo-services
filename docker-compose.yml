@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  yahoo-finance-container:
+    build: .
+    container_name: yahoo-finance-api-container
+    ports:
+      - "8014:8014"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8014
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=2
+      - YAHOO_FINANCE_TIMEOUT=30
+      - YAHOO_FINANCE_RETRIES=3
+      - YAHOO_FINANCE_DELAY=1.0
+      - DAILY_REQUEST_LIMIT=2000
+      - MAX_CONCURRENT_REQUESTS=20
+      - REQUEST_TIMEOUT=30
+      - CACHE_TTL=1800
+      - QUOTE_CACHE_TTL=300
+      - HISTORICAL_CACHE_TTL=3600
+      - FUNDAMENTAL_CACHE_TTL=7200
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - ./cache:/app/cache
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8014/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - yahoo-finance-network
+    depends_on:
+      - redis
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: yahoo-finance-redis
+    ports:
+      - "6382:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - yahoo-finance-network
+
+networks:
+  yahoo-finance-network:
+    driver: bridge
+
+volumes:
+  redis_data: 
