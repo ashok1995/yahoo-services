@@ -1,156 +1,154 @@
-# Global Cursor Rules for Yahoo-Services
+# Yahoo-Services Master Rules
 
-## Project Context
-This is `yahoo-services` — a FastAPI microservice that provides ONLY data that Kite cannot provide (US indices, commodities, forex, fundamentals). Port 8014.
+Port: **8014** | Service: Data Kite cannot provide (US indices, commodities, forex, fundamentals)
 
-## Git Workflow (MANDATORY)
+## 🚨 Critical Rules
 
-### Branching Strategy
-- **main** — Production-ready code only. Never work directly on main.
-- **develop** — Integration branch for features. Default branch for development.
-- **feature/<name>** — New features (e.g., `feature/global-context-endpoint`)
-- **bugfix/<name>** — Bug fixes (e.g., `bugfix/rate-limit-error`)
-- **hotfix/<name>** — Critical production fixes (merged to main and develop)
+**Agent Behavior**
+- Agent **runs all commands** (servers, tests, curl, installs). Never ask user to run commands.
+- Agent **verifies before integrating** — curl external services before wiring them in.
+- Test, fix, and commit. User provides instructions only.
 
-### Workflow Rules
-1. **NEVER commit directly to main**
-2. All work happens in feature/bugfix/hotfix branches
-3. Feature branches created from `develop`
-4. Merge to `develop` first, then to `main` when ready for production
-5. Always create meaningful branch names: `feature/add-fundamentals-endpoint`
+**Git Workflow (Strict)**
+- ❌ Never work/commit on `main` or `develop` directly
+- ❌ Never push directly to `main`
+- ✅ Always create feature branches from `develop`
+- ✅ Flow: `develop` → `feature/xyz` → PR to `develop` → test → PR to `main`
+- Deploy production **only from `main` branch**
 
-### Example Workflow
-```bash
-git checkout develop
-git checkout -b feature/global-context-endpoint
-# ... work ...
-git commit -m "feat: add global context endpoint"
-git checkout develop
-git merge feature/global-context-endpoint
-# When ready for production:
-git checkout main
-git merge develop
-```
+## Scope & Endpoints
 
-## Core Development Principles
+**Zero Redundancy**: Only data Kite cannot provide
+- ✅ US indices (S&P, NASDAQ, VIX), commodities (Gold, Crude), forex (USD/INR), fundamentals
+- ❌ NSE/BSE quotes/candles (use Kite)
 
-### 1. Zero Redundancy
-- This service provides ONLY data Kite cannot provide
-- ❌ FORBIDDEN: Fetching NSE/BSE stock data (use Kite)
-- ✅ ALLOWED: US indices, commodities, forex, fundamentals
+**Exactly 4 Endpoints** (no new endpoints without approval):
+1. `GET /api/v1/global-context` — Primary (90% usage)
+2. `POST /api/v1/fundamentals/batch` — Weekly enrichment
+3. `GET /api/v1/alpha-vantage/global-context` — Fallback (optional)
+4. `GET /health` — Health check
 
-### 2. Minimal Scope
-- Only 4 endpoints: `/api/v1/global-context`, `/api/v1/fundamentals/batch`, `/api/v1/alpha-vantage/global-context`, `/health`
-- No demos, no example code, production-only
-- No tests unless explicitly requested
+## Code Quality (Non-Negotiable)
 
-### 3. Architecture Standards
-- **Config-driven**: All settings via `config/settings.py` (pydantic-settings)
-- **NO hardcoded values**: Everything configurable via environment variables
-- **Pydantic models**: All requests/responses use Pydantic for validation
-- **Structured logging**: JSON logs to `logs/yahoo-services.log`
-- **Clean separation**: routes → services → external APIs
+**Size Limits**
+- **Max 300 lines per file** — split if larger
+- **Max 30 lines per function** — extract to smaller units
+- **No duplicate logic** — DRY strictly enforced
 
-### 4. Code Quality (State-of-the-art)
-- **DRY**: If logic is used 2+ times, extract to function
-- **Type hints**: Mandatory on all functions
-- **Single responsibility**: Each module has one clear purpose
-- **Scan before writing**: Look for similar logic, prefer refactoring
-- **Minimal code**: Maximum reusability
+**Standards**
+- **Pydantic models mandatory** — all endpoints must have request/response models
+- **Type hints mandatory** — all functions
+- **Test before commit** — run tests, fix breaks before pushing
+- **Scan before writing** — look for similar logic, refactor instead of rewrite
+- **No hardcoded values** — use config for everything
+- **Dependency injection** — no inline instantiation
 
-### 5. Logging Requirements
-- Write to file: `logs/yahoo-services.log`
-- JSON format with: timestamp, level, service, module, message, context
-- Log rotation: 10MB per file, keep 5 files
-- NO print statements — use logger
+**Logging**
+- JSON logs to `logs/yahoo-services.log` (rotation: 10MB, keep 5)
+- Format: `{timestamp, level, service, module, message, context}`
+- NO `print()` statements
 
-### 6. Configuration Management
-- All config via `config/settings.py` using pydantic-settings
-- Load from `.env` file
-- NO hardcoded values in scripts
+**Configuration**
+- All config in `config/settings.py` (pydantic-settings)
+- Env file: `envs/env.dev` (not root `.env`)
 - Validate all config on startup
 
-## File Structure (FastAPI Best Practices)
+## File Structure
 
 ```
 yahoo-services/
-├── main.py                          # FastAPI app entry point
+├── main.py
 ├── api/
-│   ├── routes/                      # HTTP endpoints
-│   │   ├── global_context.py
-│   │   ├── fundamentals.py
-│   │   ├── alpha_vantage.py
-│   │   └── health.py
-│   └── models/                      # Pydantic models
-│       ├── requests.py
-│       └── responses.py
-├── services/                        # Business logic
-│   ├── yahoo_finance_service.py     # EXISTS
-│   ├── cache_service.py             # EXISTS
-│   ├── rate_limiter.py              # EXISTS
-│   └── alpha_vantage_service.py     # NEW
+│   ├── routes/          # Thin controllers (call services only)
+│   └── models/          # Pydantic request/response models
+├── services/            # Business logic (stateless, reusable)
 ├── config/
-│   └── settings.py                  # Centralized config
+│   └── settings.py      # Centralized config (pydantic-settings)
 ├── utils/
-│   ├── logger.py                    # Structured logging
-│   └── exceptions.py                # Custom exceptions
-└── logs/                            # Log files
+│   ├── logger.py
+│   └── exceptions.py
+├── envs/
+│   └── env.dev          # Environment variables (NOT root .env)
+├── tests/               # Unit + integration tests
+├── logs/                # Log files (gitignored)
+└── docs/                # See documentation rules below
 ```
 
-## Performance & Reliability
+## External API Integration
 
-### Caching Strategy
-- Global context: 5 minutes (matches call frequency)
-- Fundamentals: 1 day (fundamentals change slowly)
-- Cache keys: `yahoo:{endpoint}:{params_hash}`
+**Before Integration**: Verify external service is reachable
+```bash
+# Agent runs this before wiring Yahoo/Alpha Vantage
+curl -s https://query1.finance.yahoo.com/v8/finance/chart/^GSPC
+```
 
-### Rate Limiting
-- Yahoo Finance: 100 req/min (conservative)
-- Alpha Vantage: 5 req/min (free tier)
-- Use exponential backoff on errors
+**Document in `docs/api/apis-used.md`**:
+- API name, base URL, endpoints used
+- Pydantic request/response models
+- Purpose, auth, rate limits
+- Test coverage for success/failure/edge cases
 
-### Error Handling
-1. Yahoo rate-limited → Use cached data if available
-2. Yahoo unavailable → Try Alpha Vantage (if configured)
-3. Both fail → Return 503 with retry-after header
+**No raw HTTP calls** — use client wrapper with DI
 
-## What NOT to Do (STRICTLY FORBIDDEN)
+## Caching & Rate Limiting
 
-❌ **Never work directly on main branch** — Always use feature/bugfix branches
-❌ **No demos or example endpoints** — Production code only
-❌ **No redundant Kite data** — Use Kite for NSE/BSE
-❌ **No hardcoded values** — Use config for everything
-❌ **No print statements** — Use structured logging
-❌ **No generic exceptions** — Use custom exception classes
-❌ **No untyped functions** — Type hints are mandatory
-❌ **No tests unless requested** — Focus on functionality
-❌ **No extra endpoints** — Only the 4 required endpoints
+- Global context: 5 min | Fundamentals: 1 day
+- Yahoo: 100 req/min | Alpha Vantage: 5 req/min
+- Error fallback: cached data → Alpha Vantage → 503
+
+## Documentation Rules
+
+**Current State Only** — document project as it is NOW
+- Remove process docs: "current status", "refactoring plan", "recommendations"
+- Remove historical/legacy documentation
+- Keep only what reader needs to use/work on project today
+
+**Keep Docs in Sync**
+- When code changes, update corresponding docs (architecture, API, services)
+- When adding patterns/conventions, update this master rule
+
+**Structure** (no `.md` files at root of `/docs/`)
+```
+docs/
+├── README.md              # Navigation index only
+├── api/
+│   ├── api-reference.md
+│   └── apis-used.md       # Document all external APIs
+├── architecture/
+├── integration/           # Primary for API consumers
+├── deployment/
+└── development/
+```
+
+**Per Module/Folder**: `README.md` with purpose, entry points, dependencies, examples
 
 ## Port Management
 
-### Always Kill Process Using Target Port
-- Before starting service on port 8014, check and kill any process using that port
-- Use `lsof -ti:8014 | xargs kill -9` to kill by port, NOT by partial command name
-- This prevents conflicts with other services
-
-Example:
+Kill by port (8014), not by partial command:
 ```bash
-# Check if port 8014 is in use
-lsof -ti:8014
-
-# Kill process if port is in use
-lsof -ti:8014 | xargs kill -9
-
-# Then start service
+lsof -ti:8014 | xargs kill -9  # Correct
 uvicorn main:app --host 0.0.0.0 --port 8014 --reload
 ```
 
-## Integration with Seed-Stocks-Service
+## Strictly Forbidden
 
-This service is called by `seed-stocks-service`'s `GlobalContextCollector` every 5 minutes.
+❌ Working/committing on `main` or `develop` directly
+❌ Deploying to production from any branch other than `main`
+❌ Files >300 lines, functions >30 lines
+❌ Endpoints without Pydantic models
+❌ API calls without models and `docs/api/apis-used.md` entry
+❌ Committing without running tests first
+❌ Duplicate logic or redundant code
+❌ Hardcoded values, print statements, dead code
+❌ New endpoints without approval
+❌ `.md` files outside repo root or `docs/` subfolders
+❌ Env files outside `/envs/` or named other than `env.dev`
+❌ Non-relevant/orphan files
+❌ Redundant Kite data fetching (use Kite for NSE/BSE)
 
-### Critical: Response Format MUST Match
+## Integration Response Format (DO NOT CHANGE)
 
+Called by seed-stocks-service every 5 min. Format MUST match:
 ```json
 {
   "sp500": {"price": 5845.20, "change_percent": 0.45},
@@ -164,32 +162,9 @@ This service is called by `seed-stocks-service`'s `GlobalContextCollector` every
 }
 ```
 
-**DO NOT change this format without updating seed-stocks-service.**
-
-## Dependencies (Minimal)
-
-```
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-yfinance==0.2.18
-redis==5.0.1
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-httpx==0.26.0
-```
-
-**NO additional packages unless absolutely necessary.**
-
-## Summary
-
-This is a focused microservice with clear scope:
-- ✅ Provides ONLY data Kite cannot (US indices, commodities, forex, fundamentals)
-- ✅ 4 endpoints, aggressive caching, production-grade error handling
-- ✅ Config-driven, structured logging, Pydantic models everywhere
-- ✅ Clean git workflow: feature branches → develop → main
-- ❌ No demos, no redundancy, no hardcoded values, no working on main directly
-
 ---
 
-**For detailed implementation rules, see `.cursor/RULE.md`**
+✅ **Focus**: 4 endpoints, max efficiency, production-grade only
+❌ **Avoid**: Demos, redundancy, >300 LOC files, working on main
+
+See `.cursor/RULE.md` for detailed implementation guidance.

@@ -1,371 +1,189 @@
-# Yahoo-Services — Master Development Rules
+# Yahoo-Services — Implementation Rules
 
-## Core Principle: Zero Redundancy, Maximum Efficiency
+**Core Principle**: Zero Redundancy, Maximum Efficiency, Production-Grade Only
 
-**This service provides ONLY what Kite cannot. No demos. No redundant code. Production-grade only.**
-
----
-
-## 1. Scope Enforcement (STRICT)
-
-### ✅ ALLOWED — What Yahoo-Services Should Provide
-
-| Data Type | Reason |
-|-----------|--------|
-| Global indices (S&P 500, NASDAQ, Dow, VIX) | Kite doesn't have US/global data |
-| Commodities (Gold, Crude Oil) | Kite doesn't have commodities |
-| Forex (USD/INR) | Kite has limited forex |
-| Fundamentals (P/E, ROE, market cap, margins) | Kite has minimal fundamental data |
-
-### ❌ FORBIDDEN — Use Kite Instead
-
-- ❌ NSE/BSE stock quotes → **Use Kite batch quotes**
-- ❌ NSE/BSE historical candles → **Use Kite historical API**
-- ❌ NSE/BSE OHLC data → **Use Kite**
-- ❌ Market breadth (Nifty 50) → **Use Kite market context**
-
-**If you're about to fetch NSE/BSE stock data from Yahoo, STOP. Use Kite instead.**
+Port: **8014** | Only data Kite cannot provide (US indices, commodities, forex, fundamentals)
 
 ---
 
-## 2. Endpoint Requirements (ONLY 4 ENDPOINTS)
+## 1. Scope (Strict)
 
-### Required Endpoints
+### ✅ ALLOWED
+- Global indices (S&P, NASDAQ, VIX), Commodities (Gold, Crude), Forex (USD/INR), Fundamentals
 
-1. **`GET /api/v1/global-context`** (PRIMARY — 90% of usage)
-   - S&P 500, NASDAQ, Dow Jones, VIX, Gold, USD/INR, Crude Oil
-   - Called every 5 minutes by seed-stocks-service
-   - Cache TTL: 300s (5 minutes)
-
-2. **`POST /api/v1/fundamentals/batch`**
-   - Batch fundamentals: P/E, P/B, market cap, ROE, margins
-   - Called weekly (not critical path)
-   - Cache TTL: 86400s (1 day)
-
-3. **`GET /api/v1/alpha-vantage/global-context`** (OPTIONAL)
-   - Fallback for global context when Yahoo rate-limited
-   - Only if `ALPHA_VANTAGE_API_KEY` is set
-
-4. **`GET /health`**
-   - Health check with service status
-
-**DO NOT create additional endpoints unless explicitly required.**
+### ❌ FORBIDDEN
+- NSE/BSE quotes/candles/OHLC → Use Kite
 
 ---
 
-## 3. Code Architecture Standards
+## 2. Endpoints (Exactly 4)
 
-### File Structure (FastAPI Best Practices)
+1. `GET /api/v1/global-context` — PRIMARY (90% usage), cache: 5 min
+2. `POST /api/v1/fundamentals/batch` — Weekly, cache: 1 day
+3. `GET /api/v1/alpha-vantage/global-context` — Fallback (optional)
+4. `GET /health` — Health check
 
+**No new endpoints without approval.**
+
+---
+
+## 3. Code Architecture
+
+### File Structure
 ```
 yahoo-services/
-├── main.py                          # FastAPI app entry point
+├── main.py
 ├── api/
-│   ├── __init__.py
-│   ├── routes/
-│   │   ├── __init__.py
-│   │   ├── global_context.py        # Global context endpoint
-│   │   ├── fundamentals.py          # Fundamentals batch endpoint
-│   │   ├── alpha_vantage.py         # Alpha Vantage fallback (optional)
-│   │   └── health.py                # Health check
-│   └── models/
-│       ├── __init__.py
-│       ├── requests.py              # Pydantic request models
-│       └── responses.py             # Pydantic response models
-├── services/
-│   ├── __init__.py
-│   ├── yahoo_finance_service.py     # Yahoo Finance integration (EXISTS)
-│   ├── cache_service.py             # Redis caching (EXISTS)
-│   ├── rate_limiter.py              # Rate limiting (EXISTS)
-│   └── alpha_vantage_service.py     # Alpha Vantage integration (NEW, OPTIONAL)
-├── config/
-│   ├── __init__.py
-│   └── settings.py                  # Centralized config (pydantic-settings)
+│   ├── routes/          # Thin (call services only)
+│   └── models/          # Pydantic request/response
+├── services/            # Business logic (stateless)
+├── config/settings.py   # pydantic-settings
 ├── utils/
-│   ├── __init__.py
-│   ├── logger.py                    # Centralized logging
-│   └── exceptions.py                # Custom exceptions
-└── tests/                           # Unit tests (only if requested)
+│   ├── logger.py
+│   └── exceptions.py
+├── envs/env.dev         # NOT root .env
+├── tests/
+├── logs/                # Gitignored
+└── docs/                # See §8
 ```
 
 ### Mandatory Patterns
-
-1. **Configuration Management**
-   - Use `pydantic-settings` for all config
-   - NO hardcoded values in code
-   - Environment variables loaded from `.env`
-   - Validate all config on startup
-
-2. **Data Models (Pydantic)**
-   - All request/response bodies use Pydantic models
-   - All service layer data uses Pydantic models
-   - Enables automatic validation and serialization
-
-3. **Logging (Structured)**
-   - Use Python `logging` module
-   - Log to file: `logs/yahoo-services.log`
-   - JSON format for structured logging
-   - Include: timestamp, level, module, message, context
-   - Log rotation: 10MB per file, keep 5 files
-
-4. **Error Handling (Consistent)**
-   - Custom exception classes in `utils/exceptions.py`
-   - HTTP exception handlers in `main.py`
-   - Return standardized error responses:
-     ```json
-     {
-       "error": {
-         "code": "YAHOO_RATE_LIMIT_EXCEEDED",
-         "message": "Yahoo Finance rate limit exceeded",
-         "details": {...}
-       },
-       "timestamp": "2026-02-13T..."
-     }
-     ```
-
-5. **Dependency Injection**
-   - Use FastAPI's dependency injection
-   - Inject services, config, cache into routes
-   - Makes testing easier (if tests are written)
+1. **Config**: pydantic-settings, load from `envs/env.dev`, NO hardcoded values
+2. **Models**: Pydantic for all endpoints (request + response)
+3. **Logging**: JSON to `logs/yahoo-services.log` (10MB rotation, keep 5)
+4. **Errors**: Custom exceptions, standardized responses
+5. **DI**: FastAPI dependency injection
 
 ---
 
-## 4. Code Quality Rules
+## 4. Code Quality
 
-### Minimal Code, Maximum Reusability
+**Size Limits**
+- **Max 300 lines per file**
+- **Max 30 lines per function**
 
-1. **DRY Principle (Don't Repeat Yourself)**
-   - If logic is used 2+ times, extract to function
-   - If data structure is used 2+ times, create Pydantic model
-   - Scan for similar logic before writing new code
+**Standards**
+- **DRY**: Extract logic used 2+ times
+- **Type hints**: Mandatory
+- **Single responsibility**: Routes → services → external APIs
+- **Scan before writing**: Look for similar logic, refactor
+- **Test before commit**: Run tests, fix breaks before push
 
-2. **Single Responsibility**
-   - Routes: Handle HTTP requests/responses only
-   - Services: Business logic and external API calls
-   - Models: Data validation and serialization
-   - Utils: Shared utilities (logging, exceptions)
-
-3. **No Premature Optimization**
-   - Use Redis caching for rate limit protection
-   - Batch requests when possible (e.g., `get_quotes_batch`)
-   - Don't optimize until profiling shows bottleneck
-
-4. **Type Hints Everywhere**
-   - All functions have type hints
-   - Use `typing` module for complex types
-   - Enables better IDE support and catches errors early
+**Error Handling**
+1. Yahoo rate-limited → cached data
+2. Yahoo down → Alpha Vantage (if configured)
+3. Both fail → 503 with retry-after
 
 ---
 
-## 5. Performance & Reliability
+## 5. Configuration
 
-### Caching Strategy
-
-- **Global context**: 5 minutes (matches call frequency)
-- **Fundamentals**: 1 day (fundamentals change slowly)
-- **Cache keys**: Structured as `yahoo:{endpoint}:{params_hash}`
-
-### Rate Limiting
-
-- **Yahoo Finance**: 100 requests/min (conservative to avoid blocks)
-- **Alpha Vantage**: 5 requests/min (free tier: 500/day)
-- Use exponential backoff on rate limit errors
-
-### Timeout Configuration
-
-- **Yahoo Finance**: 10 seconds
-- **Alpha Vantage**: 10 seconds
-- **Redis**: 5 seconds
-
-### Error Handling & Fallbacks
-
-1. If Yahoo rate-limited → Use cached data if available
-2. If Yahoo unavailable → Try Alpha Vantage (if configured)
-3. If both fail → Return 503 Service Unavailable with retry-after header
-
----
-
-## 6. Configuration Management
-
-### Environment Variables (Required)
+Location: `envs/env.dev` (NOT root `.env`)
 
 ```bash
-# Service
-SERVICE_NAME=yahoo-services
 SERVICE_PORT=8014
 LOG_LEVEL=INFO
-
-# Yahoo Finance
-YAHOO_FINANCE_ENABLED=true
 YAHOO_FINANCE_RATE_LIMIT=100
 YAHOO_FINANCE_TIMEOUT=10
-
-# Alpha Vantage (Optional)
 ALPHA_VANTAGE_API_KEY=
-ALPHA_VANTAGE_ENABLED=false
-ALPHA_VANTAGE_RATE_LIMIT=5
-
-# Global context symbols (NO SPACES)
 GLOBAL_CONTEXT_SYMBOLS=^GSPC,^IXIC,^DJI,^VIX,GC=F,USDINR=X,CL=F
-
-# Redis
 REDIS_URL=redis://localhost:6379/3
-REDIS_ENABLED=true
-
-# Cache TTLs (seconds)
 CACHE_TTL_GLOBAL_CONTEXT=300
 CACHE_TTL_FUNDAMENTALS=86400
 ```
 
-### Config Loading Pattern
+---
 
-```python
-from pydantic_settings import BaseSettings
+## 6. External API Integration
 
-class Settings(BaseSettings):
-    service_name: str
-    service_port: int = 8014
-    log_level: str = "INFO"
-    
-    yahoo_finance_enabled: bool = True
-    yahoo_finance_rate_limit: int = 100
-    # ... etc
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+**Before Wiring**: Verify service is reachable
+```bash
+curl -s https://query1.finance.yahoo.com/v8/finance/chart/^GSPC
+```
 
-settings = Settings()
+**Document in `docs/api/apis-used.md`**:
+- API name, base URL, endpoints
+- Pydantic models (req/res)
+- Purpose, auth, rate limits
+- Test coverage (success/failure/edge)
+
+**No raw HTTP calls** — use client wrapper with DI
+
+---
+
+## 7. Logging
+
+Format: `{timestamp, level, service, module, message, context}`
+- INFO: API calls, cache hits, startup
+- WARNING: Rate limits, fallback triggered
+- ERROR: Failures, exceptions
+- DEBUG: Payloads (dev only)
+
+NO `print()` statements
+
+---
+
+## 8. Documentation
+
+**Current State Only** — remove process/status/history docs
+
+**Structure** (no `.md` at `/docs/` root except `README.md`)
+```
+docs/
+├── README.md           # Navigation only
+├── api/
+│   ├── api-reference.md
+│   └── apis-used.md    # All external APIs
+├── architecture/
+├── integration/
+└── deployment/
+```
+
+**Keep in Sync**: Code changes → update docs → update this master rule
+
+---
+
+## 9. Development Workflow
+
+1. **Config**: `config/settings.py` + `envs/env.dev`
+2. **Models**: Pydantic request/response
+3. **Services**: Review existing, add Alpha Vantage if needed
+4. **Routes**: `/health` → `/api/v1/global-context` → `/api/v1/fundamentals/batch` → Alpha Vantage
+5. **Wire**: Add logging, exception handlers to `main.py`
+6. **Test**: Start server, curl endpoints, verify caching
+
+```bash
+# Kill port, start service
+lsof -ti:8014 | xargs kill -9
+uvicorn main:app --host 0.0.0.0 --port 8014 --reload
+
+# Test
+curl http://localhost:8014/health
+curl http://localhost:8014/api/v1/global-context
 ```
 
 ---
 
-## 7. Testing Guidelines (Only if Explicitly Requested)
+## 10. Strictly Forbidden
 
-**Default: NO TESTS unless user asks.**
-
-If tests are requested:
-- Use `pytest`
-- Mock external APIs (Yahoo, Alpha Vantage)
-- Test only critical paths (global context endpoint)
-- NO demo tests, NO test for the sake of testing
-
----
-
-## 8. Logging Standards
-
-### What to Log
-
-- **INFO**: Successful API calls, cache hits/misses, startup/shutdown
-- **WARNING**: Rate limits approaching, fallback triggered, stale cache served
-- **ERROR**: API failures, exceptions, invalid responses
-- **DEBUG**: Request/response payloads (only in development)
-
-### Log Format (JSON)
-
-```json
-{
-  "timestamp": "2026-02-13T14:30:00+05:30",
-  "level": "INFO",
-  "service": "yahoo-services",
-  "module": "global_context",
-  "message": "Fetched global context",
-  "context": {
-    "symbols": ["^GSPC", "^IXIC", "^DJI", "^VIX"],
-    "cache_hit": false,
-    "duration_ms": 245
-  }
-}
-```
-
-### Log Files
-
-- Location: `logs/yahoo-services.log`
-- Rotation: 10MB per file, keep 5 files
-- Create logs directory on startup if missing
+❌ Working/committing on `main`/`develop` directly
+❌ Deploying production from non-`main` branch
+❌ Files >300 lines, functions >30 lines
+❌ Endpoints without Pydantic models
+❌ API calls without models + `docs/api/apis-used.md` entry
+❌ Committing without testing first
+❌ Duplicate logic, hardcoded values, print statements
+❌ New endpoints without approval
+❌ `.md` outside repo root or `docs/` subfolders
+❌ Env files outside `/envs/` or named other than `env.dev`
+❌ Redundant Kite data (use Kite for NSE/BSE)
+❌ Demos, tests (unless requested), over-engineering
 
 ---
 
-## 9. Dependencies Management
+## 11. Integration Response Format (DO NOT CHANGE)
 
-### Required Packages (requirements.txt)
-
-```
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-yfinance==0.2.18
-redis==5.0.1
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-httpx==0.26.0
-```
-
-**NO additional packages unless absolutely necessary.**
-
----
-
-## 10. Development Workflow
-
-### Step-by-Step Checklist
-
-1. **Configuration first**
-   - Create `config/settings.py` with all env vars
-   - Create `.env` file from `env.example`
-
-2. **Models next**
-   - Create Pydantic request/response models
-   - Validate against requirements doc
-
-3. **Services layer (already exists)**
-   - Review existing services
-   - Add Alpha Vantage service if needed
-
-4. **Routes layer**
-   - Implement endpoints one by one
-   - Start with `/health` (simplest)
-   - Then `/api/v1/global-context` (primary use case)
-   - Then `/api/v1/fundamentals/batch`
-   - Finally Alpha Vantage fallback (optional)
-
-5. **Logging & error handling**
-   - Add structured logging to all routes
-   - Add exception handlers to main.py
-
-6. **Testing (manual)**
-   - Start service: `uvicorn main:app --host 0.0.0.0 --port 8014 --reload`
-   - Test each endpoint with curl
-   - Verify caching works (call twice, check logs)
-   - Verify rate limiting works
-
----
-
-## 11. What NOT to Do (STRICTLY FORBIDDEN)
-
-❌ **No demos or example endpoints** — Production code only
-❌ **No redundant Kite data fetching** — Use Kite for NSE/BSE
-❌ **No hardcoded values** — Use config for everything
-❌ **No print statements** — Use structured logging
-❌ **No generic exceptions** — Use custom exception classes
-❌ **No untyped functions** — Type hints are mandatory
-❌ **No tests unless requested** — Focus on functionality
-❌ **No extra endpoints** — Only the 4 required endpoints
-❌ **No over-engineering** — Keep it simple and efficient
-
----
-
-## 12. Integration with seed-stocks-service
-
-**This service is called by seed-stocks-service's `GlobalContextCollector`.**
-
-### Expected behavior:
-- `/api/v1/global-context` called every 5 minutes
-- Response cached for 5 minutes
-- If Yahoo fails, fallback to Alpha Vantage (if configured)
-- If both fail, return 503 with retry-after header
-
-### Response format MUST match:
-
+Called by seed-stocks-service every 5 min:
 ```json
 {
   "sp500": {"price": 5845.20, "change_percent": 0.45},
@@ -379,40 +197,14 @@ httpx==0.26.0
 }
 ```
 
-**DO NOT change this response format without updating seed-stocks-service.**
-
 ---
 
-## 13. Quick Reference: File Creation Order
+## Summary
 
-1. `config/settings.py` — Centralized config with pydantic-settings
-2. `utils/logger.py` — Structured logging setup
-3. `utils/exceptions.py` — Custom exception classes
-4. `api/models/responses.py` — Response Pydantic models
-5. `api/models/requests.py` — Request Pydantic models
-6. `api/routes/health.py` — Health check endpoint
-7. `api/routes/global_context.py` — Primary endpoint (global context)
-8. `api/routes/fundamentals.py` — Fundamentals batch endpoint
-9. `services/alpha_vantage_service.py` — Alpha Vantage integration (optional)
-10. `api/routes/alpha_vantage.py` — Alpha Vantage fallback endpoint (optional)
-11. `main.py` — Wire everything together
+✅ 4 endpoints, existing services, aggressive caching, production-grade
+✅ Max 300 LOC/file, 30 LOC/function, DRY, type hints
+✅ Config-driven (`envs/env.dev`), structured logging, Pydantic everywhere
+✅ Test before commit, document APIs, keep docs synced
+✅ Git: feature branches → develop → main
 
----
-
-## Summary: Target & Efficient Development
-
-✅ **Focus on the 4 required endpoints only**
-✅ **Use existing services layer (already built)**
-✅ **No duplication of Kite data**
-✅ **Aggressive caching to avoid rate limits**
-✅ **Structured logging to files**
-✅ **Pydantic models for all data**
-✅ **Config-driven, no hardcoded values**
-✅ **Production-grade error handling**
-✅ **Clean separation: routes → services → external APIs**
-
-❌ **No demos, no tests (unless requested), no redundant code**
-
----
-
-**This rule file ensures efficient, targeted work aligned with the requirements document.**
+❌ No demos, redundancy, hardcoded values, working on main
