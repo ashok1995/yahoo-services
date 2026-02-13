@@ -1,6 +1,6 @@
 #!/bin/bash
 # Development Deployment Script for Yahoo Services
-# Port: 8085 | Environment: development
+# Port: 8085 | Environment: development | Method: Poetry (no Docker)
 
 set -e
 
@@ -18,11 +18,20 @@ SERVICE_NAME="yahoo-services-dev"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║         Yahoo Services - Development Deployment               ║${NC}"
+echo -e "${BLUE}║                    (Poetry - No Docker)                       ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Step 1: Check prerequisites
 echo -e "${YELLOW}[1/7]${NC} Checking prerequisites..."
+
+# Check if Poetry is installed
+if ! command -v poetry &> /dev/null; then
+    echo -e "${RED}❌ Poetry is not installed${NC}"
+    echo -e "${YELLOW}Install Poetry: curl -sSL https://install.python-poetry.org | python3 -${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Poetry is installed${NC}"
 
 # Check if Redis is running
 if ! redis-cli ping > /dev/null 2>&1; then
@@ -36,14 +45,12 @@ if ! redis-cli ping > /dev/null 2>&1; then
 fi
 echo -e "${GREEN}✅ Redis is running${NC}"
 
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo -e "${YELLOW}⚠️  Virtual environment not found. Creating...${NC}"
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
+# Install dependencies with Poetry
+if [ ! -d ".venv" ]; then
+    echo -e "${YELLOW}⚠️  Poetry environment not found. Installing dependencies...${NC}"
+    poetry install --no-root
 else
-    echo -e "${GREEN}✅ Virtual environment exists${NC}"
+    echo -e "${GREEN}✅ Poetry environment exists${NC}"
 fi
 
 # Step 2: Kill any process on port 8085
@@ -71,13 +78,12 @@ echo -e "${YELLOW}[4/7]${NC} Setting up logs directory..."
 mkdir -p logs
 echo -e "${GREEN}✅ Logs directory ready${NC}"
 
-# Step 5: Activate virtual environment and start service
+# Step 5: Start service with Poetry
 echo -e "${YELLOW}[5/7]${NC} Starting ${SERVICE_NAME} on port ${PORT}..."
-source venv/bin/activate
 export ENVIRONMENT=${ENVIRONMENT}
 
-# Start service in background
-nohup python3 main.py > logs/dev-startup.log 2>&1 &
+# Start service in background using Poetry
+nohup poetry run python main.py > logs/dev-startup.log 2>&1 &
 SERVICE_PID=$!
 
 echo -e "${GREEN}✅ Service started with PID: ${SERVICE_PID}${NC}"

@@ -23,16 +23,18 @@ Three automated deployment scripts for each environment.
 ```
 
 **What it does:**
-1. Checks Redis is running
-2. Kills any process on port 8085
-3. Verifies environment file (`envs/env.dev`)
-4. Activates virtual environment
-5. Starts service with Python
-6. Waits for service to be ready
-7. Verifies health endpoint
-8. Displays service info
+1. Checks Poetry is installed
+2. Checks Redis is running
+3. Installs dependencies with Poetry
+4. Kills any process on port 8085
+5. Verifies environment file (`envs/env.dev`)
+6. Starts service with Poetry (no Docker)
+7. Waits for service to be ready
+8. Verifies health endpoint
+9. Displays service info
 
-**Use when:** Local development and testing
+**Use when:** Local development and testing  
+**Method:** Poetry (no Docker) for fast iteration
 
 ---
 
@@ -51,17 +53,18 @@ git push origin develop
 **What it does:**
 1. Verifies you're on `develop` branch
 2. Checks Docker is running
-3. Checks Redis is running
+3. Checks Redis is running (local)
 4. Kills any process on port 8285
 5. Verifies environment file (`envs/env.stage`)
 6. Stops existing staging containers
-7. Builds Docker image
-8. Starts staging service with Docker Compose
+7. Builds Docker image with Poetry
+8. Starts staging service + dedicated Redis container
 9. Waits for service to be ready
 10. Verifies health endpoint
 11. Displays service info
 
-**Use when:** Pre-production testing before deploying to production
+**Use when:** Pre-production testing before deploying to production  
+**Method:** Docker + Poetry with isolated Redis container
 
 ---
 
@@ -86,13 +89,14 @@ git push origin main
 6. Kills any process on port 8185
 7. Verifies environment file (`envs/env.prod`)
 8. Stops existing production containers
-9. Builds Docker image
-10. Starts production service with Docker Compose
+9. Builds Docker image with Poetry
+10. Starts production service + dedicated Redis container
 11. Waits for service to be ready
 12. Verifies health endpoint
 13. Displays service info
 
-**Use when:** Deploying to production (ONLY from main branch)
+**Use when:** Deploying to production (ONLY from main branch)  
+**Method:** Docker + Poetry with isolated Redis container
 
 ---
 
@@ -125,16 +129,18 @@ git push origin main
 
 ### For All Environments
 - Git repository
-- Redis running locally
 - `jq` installed (for JSON parsing)
+- Poetry installed (`curl -sSL https://install.python-poetry.org | python3 -`)
 
 ### For Development Only
 - Python 3.13
-- Virtual environment (`venv/`)
+- Redis running locally (`brew services start redis`)
+- Poetry environment (auto-created by script)
 
 ### For Staging & Production
 - Docker Desktop running
 - Docker Compose installed
+- Redis running locally (for health checks only)
 
 ---
 

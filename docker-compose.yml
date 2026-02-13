@@ -1,27 +1,6 @@
 version: '3.8'
 
 services:
-  # Development service
-  yahoo-services-dev:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: yahoo-services-dev
-    ports:
-      - "8085:8085"
-    environment:
-      - ENVIRONMENT=development
-    volumes:
-      - .:/app
-      - ./logs:/app/logs
-    restart: unless-stopped
-    networks:
-      - yahoo-network
-    depends_on:
-      - redis
-    profiles:
-      - dev
-
   # Staging service
   yahoo-services-stage:
     build:
@@ -36,9 +15,9 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     networks:
-      - yahoo-network
+      - yahoo-network-stage
     depends_on:
-      - redis
+      - redis-stage
     profiles:
       - stage
 
@@ -56,29 +35,50 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     networks:
-      - yahoo-network
+      - yahoo-network-prod
     depends_on:
-      - redis
+      - redis-prod
     profiles:
       - prod
 
-  # Redis service (shared across environments)
-  redis:
+  # Redis for Staging (internal only, no external port exposure)
+  redis-stage:
     image: redis:7-alpine
-    container_name: yahoo-redis
-    ports:
-      - "6379:6379"
+    container_name: yahoo-redis-stage
+    expose:
+      - "6379"
     volumes:
-      - redis-data:/data
+      - redis-data-stage:/data
     restart: unless-stopped
     networks:
-      - yahoo-network
+      - yahoo-network-stage
     command: redis-server --appendonly yes
+    profiles:
+      - stage
+
+  # Redis for Production (internal only, no external port exposure)
+  redis-prod:
+    image: redis:7-alpine
+    container_name: yahoo-redis-prod
+    expose:
+      - "6379"
+    volumes:
+      - redis-data-prod:/data
+    restart: unless-stopped
+    networks:
+      - yahoo-network-prod
+    command: redis-server --appendonly yes
+    profiles:
+      - prod
 
 networks:
-  yahoo-network:
+  yahoo-network-stage:
+    driver: bridge
+  yahoo-network-prod:
     driver: bridge
 
 volumes:
-  redis-data:
+  redis-data-stage:
+    driver: local
+  redis-data-prod:
     driver: local

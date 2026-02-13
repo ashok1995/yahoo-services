@@ -20,10 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
-venv/
-env/
-ENV/
+
 .venv
 
 # Environment variables
@@ -41,7 +38,7 @@ ENV/
 # Logs
 logs/
 *.log
-
+.cursor/
 # Testing
 .pytest_cache/
 .coverage
