@@ -17,6 +17,8 @@ pydantic = ">=2.9.0"
 pydantic-settings = ">=2.6.0"
 yfinance = ">=0.2.18"
 python-dotenv = ">=1.0.0"
+# Pin NumPy <2 for older CPUs: NumPy 2.x wheels require x86-64-v2 (AVX); 1.26.x has manylinux2010.
+numpy = ">=1.26,<2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

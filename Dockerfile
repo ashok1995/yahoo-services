@@ -31,11 +31,8 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock ./
 
 # Install dependencies (no dev dependencies for production)
+# NumPy is pinned to <2 in pyproject.toml for older CPU compatibility (no AVX/x86-64-v2).
 RUN poetry install --no-root --only main
-
-# Rebuild NumPy from source for compatibility with older CPUs (e.g. VMs without AVX/x86-64-v2).
-# PyPI wheels are often built for x86-64-v2; building on target avoids RuntimeError.
-RUN .venv/bin/pip install --no-cache-dir --no-binary numpy --force-reinstall numpy || true
 
 # ============================================================
 # Final stage
