@@ -64,17 +64,22 @@ curl http://localhost:8285/health | jq .
 - Review and merge the PR in the UI.
 - Do **not** run `git merge` or `git push origin main` from the command line.
 
-### 6. Deploy to **production (VM)** — only from `main`
+### 6. Deploy to **production (VM)** — only from `main` (no image transfer)
 
 After the PR is merged to main:
 
+- **From your Mac:** run `./deploy-vm-prod.sh` — it SSHs to the VM, then on the VM: **git pull origin main**, **build image there**, and start containers. No image is built or transferred from your machine.
+- **On the VM:** you can also run `./deploy-vm-prod.sh` from `/opt/yahoo-services` (same steps: pull main, build on VM, up).
+
 ```bash
-git checkout main
-git pull origin main
+# From local (triggers VM to pull main + build on VM)
 ./deploy-vm-prod.sh
+
+# Optional: force full rebuild on VM
+./deploy-vm-prod.sh --no-cache
 ```
 
-- Production uses branch **main** only. Run `deploy-vm-prod.sh` only after pulling latest main (post-merge from UI).
+- Production **always** uses **main** on the VM. The VM pulls main and builds the image on the VM for reliability (single source of truth: git).
 
 ---
 

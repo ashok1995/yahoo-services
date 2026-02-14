@@ -9,6 +9,11 @@
 
 set -e
 
+# Ensure Docker socket is used (helps when run in background; macOS Docker Desktop)
+if [ -n "$HOME" ] && [ -S "$HOME/.docker/run/docker.sock" ]; then
+    export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -114,8 +119,21 @@ echo -e "${YELLOW}[4/8]${NC} Stopping existing staging containers..."
 docker-compose --profile ${PROFILE} down > /dev/null 2>&1 || true
 echo -e "${GREEN}✅ Existing containers stopped${NC}"
 
-# Step 5: Build Docker image
+# Step 5: Build Docker image (ensure daemon is reachable before build)
 echo -e "${YELLOW}[5/8]${NC} Building Docker image..."
+DOCKER_READY=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if docker info > /dev/null 2>&1; then
+        DOCKER_READY=1
+        break
+    fi
+    echo -e "${YELLOW}   Waiting for Docker daemon...${NC}"
+    sleep 3
+done
+if [ "$DOCKER_READY" -eq 0 ]; then
+    echo -e "${RED}❌ Cannot connect to Docker daemon. Ensure Docker Desktop is running and try again.${NC}"
+    exit 1
+fi
 export DOCKER_BUILDKIT=1 && docker-compose --profile ${PROFILE} build
 echo -e "${GREEN}✅ Docker image built${NC}"
 
