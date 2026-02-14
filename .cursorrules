@@ -9,12 +9,13 @@ Port: **8014** | Service: Data Kite cannot provide (US indices, commodities, for
 - Agent **verifies before integrating** — curl external services before wiring them in.
 - Test, fix, and commit. User provides instructions only.
 
-**Git Workflow (Strict)**
+**Git Workflow (Strict)** — see BRANCH-WORKFLOW.md
 - ❌ Never work/commit on `main` or `develop` directly
-- ❌ Never push directly to `main`
-- ✅ Always create feature branches from `develop`
-- ✅ Flow: `develop` → `feature/xyz` → PR to `develop` → test → PR to `main`
-- Deploy production **only from `main` branch**
+- ❌ Never merge via command line: use **Pull Requests in GitHub UI** to update develop and main
+- ❌ Never push directly to `main`; never run deploy-vm-prod from a feature branch
+- ✅ Always create feature branches from `develop` (e.g. feature/xxx, bugfix/xxx), push branch, open PR
+- ✅ Flow: feature/xxx → PR → develop (merge in UI) → staging → PR → main (merge in UI) → pull main, deploy VM
+- **main** = production VM only. **develop** = staging. All merges via GitHub UI.
 
 ## Scope & Endpoints
 
