@@ -1,6 +1,10 @@
 #!/bin/bash
 # Deploy Yahoo Services to Production VM
 # Run this script locally or on the VM
+#
+# Usage:
+#   ./deploy-vm-prod.sh              # DEFAULT: Build on your Mac, transfer image, run on VM (fast)
+#   ./deploy-vm-prod.sh --build-on-vm # Build on VM (slow - only use if needed)
 
 set -e
 
@@ -13,6 +17,13 @@ VM_PASSWORD="i1sS4UMRi7FXnDy9"
 PROJECT_DIR="/opt/yahoo-services"
 SERVICE_PORT="8185"
 REPO_URL="https://github.com/ashok1995/yahoo-services.git"
+IMAGE_NAME="yahoo-services:production"
+IMAGE_TAR="/tmp/yahoo-services-prod.tar.gz"
+
+# Default to building locally when deploying from local machine (VM is slow)
+# Use --build-on-vm to force building on VM instead
+BUILD_LOCAL=true
+[[ "${1:-}" == "--build-on-vm" ]] && BUILD_LOCAL=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -27,11 +38,67 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # ============================================================
+# DEPLOY FROM LOCAL: BUILD LOCALLY, TRANSFER IMAGE, RUN ON VM
+# (Use when VM build is too slow - build on your Mac, VM only loads image)
+# ============================================================
+if [[ "$BUILD_LOCAL" == true ]] && [ "$(hostname)" != "vm488109385" ]; then
+    echo -e "${YELLOW}🔨 Build-local mode: building image on this machine, then transferring to VM${NC}"
+    echo ""
+    
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    cd "$SCRIPT_DIR"
+    
+    echo -e "${YELLOW}[1/5]${NC} Building image for linux/amd64 (VM architecture)..."
+    export DOCKER_BUILDKIT=1
+    docker buildx build --platform linux/amd64 -t "$IMAGE_NAME" --load -f Dockerfile .
+    echo -e "${GREEN}✅ Image built${NC}"
+    
+    echo -e "${YELLOW}[2/5]${NC} Saving image to tar..."
+    docker save "$IMAGE_NAME" | gzip > "$IMAGE_TAR"
+    echo -e "${GREEN}✅ Saved to $IMAGE_TAR${NC}"
+    
+    echo -e "${YELLOW}[3/5]${NC} Transferring image to VM..."
+    sshpass -p "$VM_PASSWORD" scp -o StrictHostKeyChecking=no "$IMAGE_TAR" "$VM_USER@$VM_HOST:$IMAGE_TAR"
+    rm -f "$IMAGE_TAR"
+    echo -e "${GREEN}✅ Transferred${NC}"
+    
+    echo -e "${YELLOW}[4/5]${NC} On VM: loading image and starting containers..."
+    sshpass -p "$VM_PASSWORD" ssh -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" << ENDSSH
+        set -e
+        if [ ! -d /opt/yahoo-services ]; then
+            git clone $REPO_URL /opt/yahoo-services
+            cd /opt/yahoo-services && git checkout main
+        fi
+        cd /opt/yahoo-services
+        git pull origin main
+        docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+        docker load < $IMAGE_TAR
+        rm -f $IMAGE_TAR
+        docker compose -f docker-compose.prod.yml up -d
+        sleep 20
+        if curl -f http://localhost:8185/health > /dev/null 2>&1; then
+            echo "✅ Service is healthy!"
+            curl -s http://localhost:8185/health | python3 -m json.tool 2>/dev/null || true
+        else
+            echo "❌ Health check failed"
+            docker compose -f docker-compose.prod.yml logs --tail=30
+            exit 1
+        fi
+        echo ""
+        echo "✅ Deployment complete! http://203.57.85.72:8185"
+ENDSSH
+    echo -e "${GREEN}✅ Remote deployment completed!${NC}"
+    echo ""
+    exit 0
+fi
+
+# ============================================================
 # DETECT ENVIRONMENT
 # ============================================================
-if [ "$(hostname)" != "vm488109385" ] && [ ! -d "$PROJECT_DIR" ]; then
-    # Running locally, deploy via SSH
-    echo -e "${YELLOW}📡 Deploying from local machine to VM...${NC}"
+if [ "$(hostname)" != "vm488109385" ] && [ ! -d "$PROJECT_DIR" ] && [[ "$BUILD_LOCAL" == false ]]; then
+    # Running locally, deploy via SSH (build on VM) - only if --build-on-vm flag used
+    echo -e "${YELLOW}📡 Deploying from local machine to VM (building on VM - this will be slow)...${NC}"
+    echo -e "${YELLOW}   Tip: remove --build-on-vm flag to build on your Mac instead (much faster)${NC}"
     echo ""
     
     if ! command -v sshpass &> /dev/null; then
@@ -84,7 +151,7 @@ if [ "$(hostname)" != "vm488109385" ] && [ ! -d "$PROJECT_DIR" ]; then
         
         echo -e "${YELLOW}[5/7]${NC} Building and starting production containers..."
         docker compose -f docker-compose.prod.yml pull 2>/dev/null || true
-        docker compose -f docker-compose.prod.yml build --no-cache
+        export DOCKER_BUILDKIT=1 && docker compose -f docker-compose.prod.yml build
         docker compose -f docker-compose.prod.yml up -d
         echo -e "${GREEN}✅ Containers started${NC}"
         
@@ -175,7 +242,7 @@ else
     
     echo -e "${YELLOW}[5/7]${NC} Building and starting production containers..."
     docker compose -f docker-compose.prod.yml pull 2>/dev/null || true
-    docker compose -f docker-compose.prod.yml build --no-cache
+    export DOCKER_BUILDKIT=1 && docker compose -f docker-compose.prod.yml build
     docker compose -f docker-compose.prod.yml up -d
     echo -e "${GREEN}✅ Containers started${NC}"
     

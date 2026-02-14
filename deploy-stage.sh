@@ -80,7 +80,7 @@ echo -e "${GREEN}✅ Existing containers stopped${NC}"
 
 # Step 5: Build Docker image
 echo -e "${YELLOW}[5/8]${NC} Building Docker image..."
-docker-compose --profile ${PROFILE} build --no-cache
+export DOCKER_BUILDKIT=1 && docker-compose --profile ${PROFILE} build
 echo -e "${GREEN}✅ Docker image built${NC}"
 
 # Step 6: Start staging service

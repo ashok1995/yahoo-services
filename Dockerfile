@@ -1,10 +1,11 @@
+# syntax=docker/dockerfile:1
 # Multi-stage Docker build for Yahoo Services with Poetry
+# Use BuildKit for cache mounts: DOCKER_BUILDKIT=1
 FROM python:3.13-slim AS builder
 
-# Set environment variables
+# Set environment variables (allow pip cache for faster rebuilds)
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     POETRY_VERSION=1.8.0 \
     POETRY_HOME="/opt/poetry" \
@@ -30,9 +31,10 @@ WORKDIR /app
 # Copy Poetry configuration files
 COPY pyproject.toml poetry.lock ./
 
-# Install dependencies (no dev dependencies for production)
+# Install dependencies; cache mount makes subsequent builds much faster when only code changes.
 # NumPy is pinned to <2 in pyproject.toml for older CPU compatibility (no AVX/x86-64-v2).
-RUN poetry install --no-root --only main
+RUN --mount=type=cache,target=/root/.cache/pypoetry \
+    poetry install --no-root --only main
 
 # ============================================================
 # Final stage
