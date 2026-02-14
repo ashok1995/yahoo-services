@@ -11,10 +11,11 @@ Port: **8014** | Service: Data Kite cannot provide (US indices, commodities, for
 
 **Git Workflow (Strict)** — see BRANCH-WORKFLOW.md
 - ❌ Never work/commit on `main` or `develop` directly
+- ❌ Never merge via command line: use **Pull Requests in GitHub UI** to update develop and main
 - ❌ Never push directly to `main`; never run deploy-vm-prod from a feature branch
-- ✅ Always create feature branches from `develop` (e.g. feature/xxx, bugfix/xxx)
-- ✅ Flow: feature/xxx → merge to develop → test on staging (port 8285) → merge develop to main → deploy VM from main only
-- **main** = production VM only. **develop** = staging (local). All dev on **feature/xxx**
+- ✅ Always create feature branches from `develop` (e.g. feature/xxx, bugfix/xxx), push branch, open PR
+- ✅ Flow: feature/xxx → PR → develop (merge in UI) → staging → PR → main (merge in UI) → pull main, deploy VM
+- **main** = production VM only. **develop** = staging. All merges via GitHub UI.
 
 ## Scope & Endpoints
 
