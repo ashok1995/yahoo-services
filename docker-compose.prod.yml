@@ -1,0 +1,54 @@
+# Docker Compose Production Configuration for Yahoo Services
+# Port: 8185 | Environment: production
+# Deployed on VM: 203.57.85.72
+
+services:
+  # Production Yahoo Services
+  yahoo-services-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yahoo-services-prod
+    ports:
+      - "8185:8185"
+    environment:
+      - ENVIRONMENT=production
+    volumes:
+      - ./logs:/app/logs
+    restart: always
+    networks:
+      - yahoo-network-prod
+    depends_on:
+      - redis-prod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8185/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Production Redis
+  redis-prod:
+    image: redis:7-alpine
+    container_name: yahoo-redis-prod
+    expose:
+      - "6379"
+    volumes:
+      - redis-data-prod:/data
+    restart: always
+    networks:
+      - yahoo-network-prod
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  yahoo-network-prod:
+    driver: bridge
+
+volumes:
+  redis-data-prod:
+    driver: local
