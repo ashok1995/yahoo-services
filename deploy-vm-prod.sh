@@ -2,9 +2,11 @@
 # Deploy Yahoo Services to Production VM
 # Run this script locally or on the VM
 #
-# Usage:
-#   ./deploy-vm-prod.sh              # DEFAULT: Build on your Mac, transfer image, run on VM (fast)
-#   ./deploy-vm-prod.sh --build-on-vm # Build on VM (slow - only use if needed)
+# Usage (run only from main branch):
+#   git checkout main && ./deploy-vm-prod.sh              # Build locally, transfer, run on VM
+#   ./deploy-vm-prod.sh --build-on-vm                     # Build on VM (slow)
+#   ./deploy-vm-prod.sh --no-cache                        # Force full rebuild
+# See BRANCH-WORKFLOW.md for branch rules.
 
 set -e
 
@@ -23,7 +25,17 @@ IMAGE_TAR="/tmp/yahoo-services-prod.tar.gz"
 # Default to building locally when deploying from local machine (VM is slow)
 # Use --build-on-vm to force building on VM instead
 BUILD_LOCAL=true
-[[ "${1:-}" == "--build-on-vm" ]] && BUILD_LOCAL=false
+NO_CACHE=false
+for arg in "$@"; do
+    case $arg in
+        --build-on-vm)
+            BUILD_LOCAL=false
+            ;;
+        --no-cache)
+            NO_CACHE=true
+            ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -42,6 +54,13 @@ echo ""
 # (Use when VM build is too slow - build on your Mac, VM only loads image)
 # ============================================================
 if [[ "$BUILD_LOCAL" == true ]] && [ "$(hostname)" != "vm488109385" ]; then
+    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+    if [ "$CURRENT_BRANCH" != "main" ]; then
+        echo -e "${RED}❌ Production deploy must run from main branch (current: $CURRENT_BRANCH)${NC}"
+        echo -e "${YELLOW}  Merge to main first, then: git checkout main && ./deploy-vm-prod.sh${NC}"
+        echo -e "${YELLOW}  See BRANCH-WORKFLOW.md${NC}"
+        exit 1
+    fi
     echo -e "${YELLOW}🔨 Build-local mode: building image on this machine, then transferring to VM${NC}"
     echo ""
     
@@ -49,8 +68,15 @@ if [[ "$BUILD_LOCAL" == true ]] && [ "$(hostname)" != "vm488109385" ]; then
     cd "$SCRIPT_DIR"
     
     echo -e "${YELLOW}[1/5]${NC} Building image for linux/amd64 (VM architecture)..."
+    if [[ "$NO_CACHE" == true ]]; then
+        echo -e "${YELLOW}   ⚠️  Using --no-cache (fresh build)${NC}"
+    fi
     export DOCKER_BUILDKIT=1
-    docker buildx build --platform linux/amd64 -t "$IMAGE_NAME" --load -f Dockerfile .
+    if [[ "$NO_CACHE" == true ]]; then
+        docker buildx build --no-cache --platform linux/amd64 -t "$IMAGE_NAME" --load -f Dockerfile .
+    else
+        docker buildx build --platform linux/amd64 -t "$IMAGE_NAME" --load -f Dockerfile .
+    fi
     echo -e "${GREEN}✅ Image built${NC}"
     
     echo -e "${YELLOW}[2/5]${NC} Saving image to tar..."
@@ -75,17 +101,28 @@ if [[ "$BUILD_LOCAL" == true ]] && [ "$(hostname)" != "vm488109385" ]; then
         docker load < $IMAGE_TAR
         rm -f $IMAGE_TAR
         docker compose -f docker-compose.prod.yml up -d
-        sleep 20
-        if curl -f http://localhost:8185/health > /dev/null 2>&1; then
-            echo "✅ Service is healthy!"
-            curl -s http://localhost:8185/health | python3 -m json.tool 2>/dev/null || true
-        else
-            echo "❌ Health check failed"
-            docker compose -f docker-compose.prod.yml logs --tail=30
+        echo "Waiting for service (up to 60s)..."
+        sleep 40
+        HEALTH_OK=0
+        n=0
+        while [ \$n -lt 10 ]; do
+            if curl -sf http://localhost:8185/health > /dev/null 2>&1; then
+                HEALTH_OK=1
+                break
+            fi
+            n=\$((n+1))
+            sleep 2
+        done
+        if [ \$HEALTH_OK -eq 0 ]; then
+            echo "❌ Health check failed after 60s"
+            docker compose -f docker-compose.prod.yml logs --tail=40
             exit 1
         fi
+        echo "✅ Service is healthy!"
+        curl -s http://localhost:8185/health | python3 -m json.tool 2>/dev/null || true
         echo ""
         echo "✅ Deployment complete! http://203.57.85.72:8185"
+        echo "   If curl from Mac fails, on VM open port: ufw allow 8185 && ufw reload"
 ENDSSH
     echo -e "${GREEN}✅ Remote deployment completed!${NC}"
     echo ""

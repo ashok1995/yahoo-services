@@ -145,22 +145,17 @@ docs/
 
 ## 9. Development Workflow
 
+**Branch & deploy (mandatory):** See **BRANCH-WORKFLOW.md**. Summary:
+- Work on **feature/xxx** or **bugfix/xxx** (from `develop`). Never commit on `main` or `develop`.
+- Merge to **develop** → deploy **staging** (local port 8285): `./deploy-stage.sh`
+- When staging OK: merge **develop** → **main** → deploy VM **only from main**: `git checkout main && ./deploy-vm-prod.sh`
+
 1. **Config**: `config/settings.py` + `envs/env.dev`
 2. **Models**: Pydantic request/response
 3. **Services**: Review existing, add Alpha Vantage if needed
 4. **Routes**: `/health` → `/api/v1/global-context` → `/api/v1/fundamentals/batch` → Alpha Vantage
 5. **Wire**: Add logging, exception handlers to `main.py`
 6. **Test**: Start server, curl endpoints, verify caching
-
-```bash
-# Kill port, start service
-lsof -ti:8014 | xargs kill -9
-uvicorn main:app --host 0.0.0.0 --port 8014 --reload
-
-# Test
-curl http://localhost:8014/health
-curl http://localhost:8014/api/v1/global-context
-```
 
 ---
 
