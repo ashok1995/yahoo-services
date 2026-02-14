@@ -1,4 +1,6 @@
-version: '3.8'
+# Docker Compose for Yahoo Services
+# Staging: port 8285 with dedicated Redis (redis-stage)
+# Production: port 8185 with dedicated Redis (redis-prod)
 
 services:
   # Staging service
