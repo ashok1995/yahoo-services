@@ -63,6 +63,29 @@ git pull origin main
 
 ---
 
+### Method 1b: Build Locally, Transfer Image (when VM build is too slow)
+
+If the VM is slow (e.g. 20+ min on the Poetry install step), build the image on your Mac and transfer it. The VM only loads the image and runs it—no build on the VM.
+
+```bash
+cd yahoo-services
+git checkout main
+git pull origin main
+
+# Build on your machine (fast), then transfer and run on VM
+./deploy-vm-prod.sh --build-local
+```
+
+**What happens:**
+1. Builds `yahoo-services:production` locally for **linux/amd64** (VM architecture)
+2. Saves image to a tar file and SCPs it to the VM
+3. On VM: loads the image, pulls latest repo (for compose file), starts containers
+4. No Docker build on the VM—deploy finishes in a couple of minutes
+
+Use this when the default deploy (build on VM) is too slow.
+
+---
+
 ### Method 2: Deploy Directly on VM
 
 ```bash

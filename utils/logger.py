@@ -58,10 +58,6 @@ def setup_logger(
     Returns:
         Configured logger instance
     """
-    # Create logs directory if it doesn't exist
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    
     # Create logger
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, log_level.upper()))
@@ -69,16 +65,21 @@ def setup_logger(
     # Remove existing handlers
     logger.handlers.clear()
     
-    # File handler with rotation (10MB, keep 5 files)
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=10 * 1024 * 1024,  # 10MB
-        backupCount=5
-    )
-    file_handler.setFormatter(JSONFormatter(service_name))
-    logger.addHandler(file_handler)
+    # File handler with rotation (10MB, keep 5 files) - skip if not writable (e.g. Docker volume perms)
+    log_path = Path(log_file)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
+        file_handler.setFormatter(JSONFormatter(service_name))
+        logger.addHandler(file_handler)
+    except (PermissionError, OSError):
+        pass  # Fall back to console only; Docker/capture will still get logs
     
-    # Console handler for development
+    # Console handler (always; also only handler if file failed)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(
         logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
