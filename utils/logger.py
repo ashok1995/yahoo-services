@@ -43,7 +43,7 @@ class JSONFormatter(logging.Formatter):
 def setup_logger(
     name: str,
     log_level: str = "INFO",
-    log_file: str = "logs/yahoo-services.log",
+    log_file: str = "/tmp/yahoo-services.log",
     service_name: str = "yahoo-services"
 ) -> logging.Logger:
     """
