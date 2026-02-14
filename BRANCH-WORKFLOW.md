@@ -2,15 +2,17 @@
 
 **Follow this process every time. Do not work on `main` or `develop` directly.**
 
+**Merge only via remote UI (GitHub Pull Requests).** Do not merge from the command line (`git merge` / `git push` to develop or main).
+
 ---
 
 ## Branches
 
 | Branch | Use | Where |
 |--------|-----|--------|
-| **feature/xxx** or **bugfix/xxx** | All code changes | Local only |
-| **develop** | Integration, staging | Local staging (port 8285) |
-| **main** | Production only | **VM only** — never develop on main locally |
+| **feature/xxx** or **bugfix/xxx** | All code changes | Push to remote, open PR |
+| **develop** | Integration, staging | Staging (local port 8285); only updated by merging PRs in UI |
+| **main** | Production only | VM only; only updated by merging PRs in UI |
 
 ---
 
@@ -24,64 +26,65 @@ git pull origin develop
 git checkout -b feature/short-description   # or bugfix/xxx
 ```
 
-### 2. Make changes, test, commit on the feature branch
+### 2. Make changes, test, commit, push branch
 
 ```bash
-# work, test, then:
 git add .
 git commit -m "feat: or fix: description"
+git push -u origin feature/short-description
 ```
 
-### 3. Merge to `develop` (no direct commits to develop)
+### 3. Merge to `develop` — **only via GitHub UI (Pull Request)**
+
+- On GitHub: open **Pull Request**: base `develop` ← head `feature/short-description`.
+- Review and merge the PR in the UI.
+- Do **not** run `git merge` or `git push origin develop` from the command line.
+
+After merge, update your local develop:
 
 ```bash
 git checkout develop
 git pull origin develop
-git merge feature/short-description
-git push origin develop
 ```
 
 ### 4. Deploy to **staging** (local, port 8285) — always before prod
 
 ```bash
 git checkout develop
+git pull origin develop
 ./deploy-stage.sh          # or ./deploy-stage.sh -b for background
 curl http://localhost:8285/health | jq .
-# Test your endpoints on staging
 ```
 
-- Staging **always** uses branch **develop**.
-- If staging fails, fix on a new feature branch → merge to develop → redeploy stage. **Do not deploy to production until staging is OK.**
+- Staging uses branch **develop**. If staging fails, fix on a new feature branch → open PR to develop → merge in UI → pull develop → redeploy stage.
 
-### 5. When staging is OK: merge `develop` → `main` (for production only)
+### 5. When staging is OK: merge `develop` → `main` — **only via GitHub UI (Pull Request)**
 
-```bash
-git checkout main
-git pull origin main
-git merge develop
-git push origin main
-```
+- On GitHub: open **Pull Request**: base `main` ← head `develop`.
+- Review and merge the PR in the UI.
+- Do **not** run `git merge` or `git push origin main` from the command line.
 
 ### 6. Deploy to **production (VM)** — only from `main`
 
+After the PR is merged to main:
+
 ```bash
 git checkout main
 git pull origin main
-./deploy-vm-prod.sh       # builds from current dir (main), pushes image to VM
+./deploy-vm-prod.sh
 ```
 
-- Production **always** uses branch **main**.
-- **Do not run `deploy-vm-prod.sh` from a feature branch.** Checkout main, then deploy.
+- Production uses branch **main** only. Run `deploy-vm-prod.sh` only after pulling latest main (post-merge from UI).
 
 ---
 
 ## Quick reference
 
 ```
-feature/xxx  →  develop  →  staging (local :8285)  →  main  →  VM prod (203.57.85.72:8185)
-     ↑              ↑              ↑                      ↑              ↑
-  you code      merge PR      test here              merge when     deploy only
-  & commit                    before prod             staging OK    from main
+feature/xxx  →  PR (UI) → develop  →  staging (:8285)  →  PR (UI) → main  →  deploy VM
+     ↑                    ↑                                    ↑
+  push branch        merge in GitHub                      merge in GitHub
+  open PR            then pull develop                    then pull main, deploy
 ```
 
 ---
@@ -89,9 +92,9 @@ feature/xxx  →  develop  →  staging (local :8285)  →  main  →  VM prod (
 ## Rules (strict)
 
 - **Never** commit directly on `main` or `develop`.
-- **Never** deploy to VM from a feature branch; always from `main`.
-- **Always** test on staging (develop) before merging to main and deploying to prod.
-- **main** = production only. Local development and staging use **develop** and **feature/xxx**.
+- **Merge only via remote UI:** use Pull Requests to update `develop` and `main`; no command-line merge/push to those branches.
+- **Never** deploy to VM from a feature branch; always from `main` after pulling.
+- **Always** test on staging (develop) before opening PR from develop to main.
 
 ---
 
