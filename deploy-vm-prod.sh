@@ -1,12 +1,11 @@
 #!/bin/bash
 # Deploy Yahoo Services to Production VM
-# Strict process: VM pulls latest main from git and builds image on VM. No image transfer.
-#
+# Fetches pre-built image from GHCR (built by CI on push to main).
 # Usage:
-#   From local: ./deploy-vm-prod.sh              # SSH to VM, pull main, build on VM, up
-#   From local: ./deploy-vm-prod.sh --no-cache   # Same, with docker build --no-cache
-#   On VM:      ./deploy-vm-prod.sh              # Pull main, build, up (same steps)
-# See BRANCH-WORKFLOW.md. Ensure changes are merged to main (via PR) before deploying.
+#   From local: ./deploy-vm-prod.sh   # SSH to VM, pull compose + image from GHCR, up
+#   On VM:      ./deploy-vm-prod.sh   # Same steps
+# For private GHCR package: set GHCR_TOKEN on VM (GitHub PAT with read:packages).
+# See BRANCH-WORKFLOW.md.
 
 set -e
 
@@ -16,13 +15,7 @@ VM_PASSWORD="CkpkBPB1unsOyOfd"
 PROJECT_DIR="/opt/yahoo-services"
 SERVICE_PORT="8185"
 REPO_URL="https://github.com/ashok1995/yahoo-services.git"
-
-NO_CACHE=false
-for arg in "$@"; do
-    case $arg in
-        --no-cache) NO_CACHE=true ;;
-    esac
-done
+GHCR_IMAGE="ghcr.io/ashok1995/yahoo-services:main"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,15 +25,15 @@ NC='\033[0m'
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║         Yahoo Services - Production VM Deployment             ║${NC}"
-echo -e "${BLUE}║         (Git pull main on VM → build on VM → up)               ║${NC}"
+echo -e "${BLUE}║         (Pull compose + image from GHCR → up)                  ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # ============================================================
-# FROM LOCAL: SSH to VM and run deploy (pull main, build on VM, up)
+# FROM LOCAL: SSH to VM and run deploy (pull compose + image from GHCR)
 # ============================================================
 if [ "$(hostname)" != "vm488109385" ] && [ ! -d "$PROJECT_DIR" ]; then
-    echo -e "${YELLOW}📡 Deploying via VM: pull main, build on VM, up (no image transfer).${NC}"
+    echo -e "${YELLOW}📡 Deploying via VM: pull compose + image from GHCR.${NC}"
     echo ""
 
     if ! command -v sshpass &> /dev/null; then
@@ -48,17 +41,14 @@ if [ "$(hostname)" != "vm488109385" ] && [ ! -d "$PROJECT_DIR" ]; then
         exit 1
     fi
 
-    BUILD_EXTRA=""
-    [ "$NO_CACHE" = true ] && BUILD_EXTRA="--no-cache"
-
     sshpass -p "$VM_PASSWORD" ssh -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" << ENDSSH
         set -e
         PROJECT_DIR="/opt/yahoo-services"
         SERVICE_PORT="8185"
         REPO_URL="https://github.com/ashok1995/yahoo-services.git"
-        BUILD_EXTRA="$BUILD_EXTRA"
+        GHCR_IMAGE="$GHCR_IMAGE"
 
-        echo "[1/7] Checking project directory..."
+        echo "[1/6] Checking project directory..."
         if [ ! -d "\$PROJECT_DIR" ]; then
             git clone "\$REPO_URL" "\$PROJECT_DIR"
             cd "\$PROJECT_DIR" && git checkout main
@@ -66,29 +56,24 @@ if [ "$(hostname)" != "vm488109385" ] && [ ! -d "$PROJECT_DIR" ]; then
             cd "\$PROJECT_DIR"
         fi
 
-        echo "[2/7] Pulling latest code from main branch..."
+        echo "[2/6] Pulling latest compose from main..."
         git fetch origin
         git checkout main
         git pull origin main
-        echo "✅ Code updated to latest main"
+        echo "✅ Compose/config updated"
 
-        echo "[3/7] Checking Docker..."
+        echo "[3/6] Checking Docker..."
         command -v docker >/dev/null 2>&1 || { echo "❌ Docker not found"; exit 1; }
 
-        echo "[4/7] Stopping existing containers..."
-        docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+        [ -n "\$GHCR_TOKEN" ] && echo "\$GHCR_TOKEN" | docker login ghcr.io -u ashok1995 --password-stdin 2>/dev/null || true
 
-        echo "[5/7] Building image on VM (from pulled code)..."
-        export DOCKER_BUILDKIT=1
-        if [ -n "\$BUILD_EXTRA" ]; then
-            docker compose -f docker-compose.prod.yml build --no-cache
-        else
-            docker compose -f docker-compose.prod.yml build
-        fi
+        echo "[4/6] Stopping containers and pulling image from GHCR..."
+        docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+        docker compose -f docker-compose.prod.yml pull
         docker compose -f docker-compose.prod.yml up -d
         echo "✅ Containers started"
 
-        echo "[6/7] Waiting for service (up to 60s)..."
+        echo "[5/6] Waiting for service (up to 60s)..."
         sleep 40
         HEALTH_OK=0
         n=0
@@ -101,7 +86,7 @@ if [ "$(hostname)" != "vm488109385" ] && [ ! -d "$PROJECT_DIR" ]; then
             sleep 2
         done
 
-        echo "[7/7] Verifying service health..."
+        echo "[6/6] Verifying service health..."
         if [ \$HEALTH_OK -eq 0 ]; then
             echo "❌ Health check failed after 60s"
             docker compose -f docker-compose.prod.yml logs --tail=40
@@ -120,12 +105,12 @@ ENDSSH
 fi
 
 # ============================================================
-# ON VM: pull main, build on VM, up (same steps)
+# ON VM: pull compose + image from GHCR, up
 # ============================================================
 echo -e "${YELLOW}📍 Running on VM, deploying directly...${NC}"
 echo ""
 
-echo -e "${YELLOW}[1/7]${NC} Checking project directory..."
+echo -e "${YELLOW}[1/6]${NC} Checking project directory..."
 if [ ! -d "$PROJECT_DIR" ]; then
     echo -e "${YELLOW}⚠️  Project directory not found. Cloning repository...${NC}"
     git clone "$REPO_URL" "$PROJECT_DIR"
@@ -136,31 +121,25 @@ else
     echo -e "${GREEN}✅ Project directory exists${NC}"
 fi
 
-echo -e "${YELLOW}[2/7]${NC} Pulling latest code from main branch..."
+echo -e "${YELLOW}[2/6]${NC} Pulling latest compose from main..."
 git fetch origin
 git checkout main
 git pull origin main
-echo -e "${GREEN}✅ Code updated to latest main${NC}"
+echo -e "${GREEN}✅ Compose/config updated${NC}"
 
-echo -e "${YELLOW}[3/7]${NC} Checking Docker..."
+echo -e "${YELLOW}[3/6]${NC} Checking Docker..."
 command -v docker >/dev/null 2>&1 || { echo -e "${RED}❌ Docker not found${NC}"; exit 1; }
 echo -e "${GREEN}✅ Docker is available${NC}"
 
-echo -e "${YELLOW}[4/7]${NC} Stopping existing containers..."
-docker compose -f docker-compose.prod.yml down 2>/dev/null || true
-echo -e "${GREEN}✅ Existing containers stopped${NC}"
+[ -n "$GHCR_TOKEN" ] && echo "$GHCR_TOKEN" | docker login ghcr.io -u ashok1995 --password-stdin 2>/dev/null || true
 
-echo -e "${YELLOW}[5/7]${NC} Building image on VM (from pulled code)..."
-if [[ "$NO_CACHE" == true ]]; then
-    echo -e "${YELLOW}   Using --no-cache${NC}"
-    export DOCKER_BUILDKIT=1 && docker compose -f docker-compose.prod.yml build --no-cache
-else
-    export DOCKER_BUILDKIT=1 && docker compose -f docker-compose.prod.yml build
-fi
+echo -e "${YELLOW}[4/6]${NC} Stopping containers and pulling image from GHCR..."
+docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 echo -e "${GREEN}✅ Containers started${NC}"
 
-echo -e "${YELLOW}[6/7]${NC} Waiting for service (up to 60s)..."
+echo -e "${YELLOW}[5/6]${NC} Waiting for service (up to 60s)..."
 sleep 40
 HEALTH_OK=0
 n=0
@@ -173,7 +152,7 @@ while [ $n -lt 10 ]; do
     sleep 2
 done
 
-echo -e "${YELLOW}[7/7]${NC} Verifying service health..."
+echo -e "${YELLOW}[6/6]${NC} Verifying service health..."
 if [ "$HEALTH_OK" -eq 0 ]; then
     echo -e "${RED}❌ Health check failed after 60s${NC}"
     docker compose -f docker-compose.prod.yml logs --tail=40
