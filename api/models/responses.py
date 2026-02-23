@@ -27,7 +27,8 @@ class VIXData(BaseModel):
 
 class GlobalContextResponse(BaseModel):
     """Response model for global context endpoint."""
-    
+
+    # Core (required)
     sp500: MarketData = Field(..., description="S&P 500 index data")
     nasdaq: MarketData = Field(..., description="NASDAQ index data")
     dow_jones: MarketData = Field(..., description="Dow Jones index data")
@@ -35,6 +36,11 @@ class GlobalContextResponse(BaseModel):
     gold: MarketData = Field(..., description="Gold futures data")
     usd_inr: ForexData = Field(..., description="USD/INR exchange rate data")
     crude_oil: MarketData = Field(..., description="Crude oil futures data")
+
+    # Asian indices (optional - lead NSE session; Indian indices from Kite)
+    nikkei: Optional[MarketData] = Field(None, description="Nikkei 225 - Asian session lead")
+    hang_seng: Optional[MarketData] = Field(None, description="Hang Seng - Asian session lead")
+
     timestamp: str = Field(..., description="Timestamp in ISO format")
     
     class Config:
@@ -47,6 +53,8 @@ class GlobalContextResponse(BaseModel):
                 "gold": {"price": 2024.30, "change_percent": -0.15},
                 "usd_inr": {"rate": 83.25, "change_percent": 0.08},
                 "crude_oil": {"price": 78.45, "change_percent": 1.20},
+                "nikkei": {"price": 38250.0, "change_percent": -0.22},
+                "hang_seng": {"price": 18500.0, "change_percent": 0.45},
                 "timestamp": "2026-02-12T14:30:00+05:30"
             }
         }

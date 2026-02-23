@@ -46,13 +46,10 @@ async def get_global_context(
 ) -> Dict[str, Any]:
     """
     Get global market context.
-    
-    Fetches S&P 500, NASDAQ, Dow Jones, VIX, Gold, USD/INR, and Crude Oil data.
-    Called every 5 minutes by seed-stocks-service.
-    Cached for 5 minutes to avoid rate limits.
-    
-    Returns:
-        Global market context with all major indices and commodities
+
+    Non-Kite data only: US indices, VIX, Gold, USD/INR, Crude, Asian (Nikkei, Hang Seng).
+    Indian indices (Nifty 50, Bank Nifty) come from Kite Connect.
+    Called every 5 minutes by seed-stocks-service. Cached for 5 minutes.
     """
     start_time = datetime.now()
     
@@ -69,7 +66,9 @@ async def get_global_context(
             "^VIX": "vix",
             "GC=F": "gold",
             "USDINR=X": "usd_inr",
-            "CL=F": "crude_oil"
+            "CL=F": "crude_oil",
+            "^N225": "nikkei",
+            "^HSI": "hang_seng",
         }
         
         # Fetch all quotes concurrently
