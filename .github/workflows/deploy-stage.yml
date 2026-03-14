@@ -1,14 +1,24 @@
-name: Deploy Staging
+# Build and push staging image to GHCR. Staging (local) pulls and runs:
+#   docker pull ghcr.io/ashok1995/yahoo-services:stage
+#   docker compose --profile stage up -d  # or run the image with your env
+name: Build & Push Staging
 
 on:
   push:
     branches: [develop]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/ashok1995/yahoo-services
+
 jobs:
-  deploy:
-    name: Build & Deploy Staging
-    runs-on: self-hosted
+  build-push:
+    name: Build & Push to GHCR
+    runs-on: ubuntu-latest
     environment: staging
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,35 +36,18 @@ jobs:
           done
           exit $EXIT
 
-      - name: Stop existing containers
-        run: docker compose --profile stage down 2>/dev/null || true
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image & start staging
-        run: docker compose --profile stage up -d --build
-
-      - name: Wait for service
-        run: |
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:8285/health > /dev/null 2>&1 && echo "Up after ${i}s" && break
-            sleep 1
-          done
-
-      - name: Health check
-        run: |
-          RESPONSE=$(curl -sf http://localhost:8285/health)
-          STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
-          echo "Health: $STATUS"
-          [ "$STATUS" = "healthy" ] || exit 1
-
-      - name: Smoke test global-context
-        run: |
-          RESPONSE=$(curl -sf http://localhost:8285/api/v1/global-context)
-          python3 -c "
-          import sys, json
-          data = json.loads('''$RESPONSE''')
-          for key in ['sp500','nasdaq','dow_jones','vix','gold','usd_inr','crude_oil']:
-              assert key in data, f'Missing {key}'
-              trend = 'trend:' + data[key]['trend']['short_term']['regime'] if data[key].get('trend') else 'no-trend'
-              print(f'{key}: OK ({trend})')
-          print('Staging smoke test passed')
-          "
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:stage
+            ${{ env.IMAGE_NAME }}:develop-${{ github.sha }}
