@@ -1,0 +1,80 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  ci:
+    name: CI Gate
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to Staging
+    runs-on: self-hosted
+    needs: ci
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Verify branch
+        run: |
+          BRANCH=$(git branch --show-current || echo "$GITHUB_REF_NAME")
+          echo "Deploying branch: $BRANCH"
+
+      - name: Stop existing staging containers
+        run: docker compose --profile stage down 2>/dev/null || true
+
+      - name: Build staging image
+        run: docker compose --profile stage build
+
+      - name: Start staging service
+        run: docker compose --profile stage up -d
+
+      - name: Wait for service
+        run: |
+          echo "Waiting for staging service on port 8285..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8285/health > /dev/null 2>&1; then
+              echo "Service is up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Health check
+        run: |
+          RESPONSE=$(curl -sf http://localhost:8285/health)
+          STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+          echo "Health status: $STATUS"
+          [ "$STATUS" = "healthy" ] || exit 1
+
+      - name: Smoke test global-context
+        run: |
+          RESPONSE=$(curl -sf http://localhost:8285/api/v1/global-context)
+          python3 -c "
+          import sys, json
+          data = json.loads('''$RESPONSE''')
+          required = ['sp500','nasdaq','dow_jones','vix','gold','usd_inr','crude_oil']
+          for key in required:
+              assert key in data, f'Missing {key}'
+              print(f'{key}: OK', end='')
+              if data[key].get('trend'):
+                  regime = data[key]['trend']['short_term']['regime']
+                  print(f' (trend: {regime})', end='')
+              print()
+          print('Staging smoke test passed')
+          "
+
+      - name: Print deployment info
+        if: success()
+        run: |
+          echo "=========================================="
+          echo "  Staging deployed successfully"
+          echo "  Port: 8285"
+          echo "  Health: http://localhost:8285/health"
+          echo "  API:    http://localhost:8285/api/v1/global-context"
+          echo "  Docs:   http://localhost:8285/docs"
+          echo "=========================================="
