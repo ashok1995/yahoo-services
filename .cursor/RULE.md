@@ -2,23 +2,30 @@
 
 **Core Principle**: Zero Redundancy, Maximum Efficiency, Production-Grade Only
 
-Port: **8014** | Only data Kite cannot provide (US indices, commodities, forex, fundamentals)
+Port: **8014** | Global/index market context ONLY (data Kite cannot provide)
 
 ---
 
 ## 1. Scope (Strict)
 
-### ✅ ALLOWED
-- Global indices (S&P, NASDAQ, VIX), Commodities (Gold, Crude), Forex (USD/INR), Fundamentals
+### ✅ ALLOWED — This service provides:
+- Global indices: S&P 500 (`^GSPC`), NASDAQ (`^IXIC`), Dow Jones (`^DJI`), VIX (`^VIX`)
+- Commodities: Gold (`GC=F`), Crude Oil (`CL=F`)
+- Forex: USD/INR (`USDINR=X`)
+- Multi-timeframe trend analysis (5d / 1mo / 3mo) for ALL the above
+- Fundamentals (P/E, P/B, ROE, margins) for NSE stocks — batch only, weekly
 
-### ❌ FORBIDDEN
-- NSE/BSE quotes/candles/OHLC → Use Kite
+### ❌ FORBIDDEN — Kite API handles these:
+- NSE/BSE stock quotes / live prices
+- NSE/BSE candles / OHLC / historical data
+- Any per-stock Indian market data
+- **Never duplicate what Kite provides. This service is exclusively for global context.**
 
 ---
 
 ## 2. Endpoints (Exactly 4)
 
-1. `GET /api/v1/global-context` — PRIMARY (90% usage), cache: 5 min
+1. `GET /api/v1/global-context` — PRIMARY (90%), quotes + ML-ready trends
 2. `POST /api/v1/fundamentals/batch` — Weekly, cache: 1 day
 3. `GET /api/v1/alpha-vantage/global-context` — Fallback (optional)
 4. `GET /health` — Health check
@@ -34,17 +41,21 @@ Port: **8014** | Only data Kite cannot provide (US indices, commodities, forex, 
 yahoo-services/
 ├── main.py
 ├── api/
-│   ├── routes/          # Thin (call services only)
-│   └── models/          # Pydantic request/response
-├── services/            # Business logic (stateless)
-├── config/settings.py   # pydantic-settings
+│   ├── routes/                   # Thin (call services only)
+│   └── models/                   # Pydantic request/response
+├── services/
+│   ├── yahoo_finance_service.py  # Yahoo API client (quotes + candles)
+│   ├── trend_analyzer.py         # Pure computation: candles → ML-ready metrics
+│   ├── cache_service.py          # Redis caching
+│   └── rate_limiter.py           # Rate limiting
+├── config/settings.py            # pydantic-settings
 ├── utils/
 │   ├── logger.py
 │   └── exceptions.py
-├── envs/env.dev         # NOT root .env
+├── envs/env.dev                  # NOT root .env
 ├── tests/
-├── logs/                # Gitignored
-└── docs/                # See §8
+├── logs/                         # Gitignored
+└── docs/                         # See §8
 ```
 
 ### Mandatory Patterns
@@ -90,7 +101,15 @@ GLOBAL_CONTEXT_SYMBOLS=^GSPC,^IXIC,^DJI,^VIX,GC=F,USDINR=X,CL=F
 REDIS_URL=redis://localhost:6379/3
 CACHE_TTL_GLOBAL_CONTEXT=300
 CACHE_TTL_FUNDAMENTALS=86400
+CACHE_TTL_TRENDS=3600
 ```
+
+### Yahoo Finance Rate Limits (unofficial, community-observed)
+- 60 requests/minute, 360/hour, 8,000/day
+- `ticker.info` is ~6.5x heavier than `ticker.history`
+- Current budget: 91 calls/hour (84 quote + 7 trend) = 25% of hourly limit
+- **Never exceed 50% of hourly limit**
+- Trend uses `ticker.history` (light) with 1hr cache — adds only 7 calls/hour
 
 ---
 
@@ -171,35 +190,58 @@ docs/
 ❌ New endpoints without approval
 ❌ `.md` outside repo root or `docs/` subfolders
 ❌ Env files outside `/envs/` or named other than `env.dev`
-❌ Redundant Kite data (use Kite for NSE/BSE)
+❌ Indian stock quotes/candles/prices (use Kite for all NSE/BSE data)
+❌ Exceeding 50% of Yahoo's hourly rate limit (360/hr)
 ❌ Demos, tests (unless requested), over-engineering
 
 ---
 
-## 11. Integration Response Format (DO NOT CHANGE)
+## 11. Integration Response Format
 
-Called by seed-stocks-service every 5 min:
+Called by seed-stocks-service every 5 min. `trend` is optional (null if cache cold or fetch failed):
 ```json
 {
-  "sp500": {"price": 5845.20, "change_percent": 0.45},
-  "nasdaq": {"price": 18234.50, "change_percent": 0.62},
-  "dow_jones": {"price": 44320.10, "change_percent": 0.28},
-  "vix": {"value": 13.45},
-  "gold": {"price": 2024.30, "change_percent": -0.15},
-  "usd_inr": {"rate": 83.25, "change_percent": 0.08},
-  "crude_oil": {"price": 78.45, "change_percent": 1.20},
+  "sp500": {
+    "price": 5845.20, "change_percent": 0.45,
+    "trend": {
+      "short_term": {
+        "roc": -2.41, "slope_per_day": -0.65, "r_squared": 0.87,
+        "rsi": 38.5, "volatility_annualized": 10.3, "atr_pct": 1.12,
+        "sma": 5870.5, "sma_distance_pct": -0.43,
+        "period_high": 5920.0, "period_low": 5800.0,
+        "regime": "bearish", "volatility_regime": "normal", "candles_used": 5
+      },
+      "medium_term": {"...same fields, 22 candles..."},
+      "long_term": {"...same fields, ~61 candles..."}
+    }
+  },
+  "vix": {"value": 13.45, "trend": {"..."}},
   "timestamp": "2026-02-12T14:30:00+05:30"
 }
 ```
+
+**Trend regime bins**: `strong_bullish | bullish | weak_bullish | consolidating | weak_bearish | bearish | strong_bearish`
+**Volatility regime bins**: `low | normal | high | extreme`
+
+---
+
+## 12. Trend Analysis Architecture
+
+- **`trend_analyzer.py`**: Pure computation, no API calls. Input: OHLCV DataFrame. Output: metrics dict.
+- **`yahoo_finance_service.get_trend_data()`**: Fetches 3mo daily candles → runs analyzer → caches 1hr.
+- **`global_context.py`**: Fetches quotes (phase 1) then trends (phase 2) concurrently. Merges into response.
+- **Graceful degradation**: Trend failure → `trend: null` in response. Quotes always returned.
+- **One fetch, three horizons**: Single `ticker.history(period="3mo")` call sliced for 5d / 22d / full.
 
 ---
 
 ## Summary
 
-✅ 4 endpoints, existing services, aggressive caching, production-grade
+✅ 4 endpoints, global/index context only, aggressive caching, production-grade
 ✅ Max 300 LOC/file, 30 LOC/function, DRY, type hints
 ✅ Config-driven (`envs/env.dev`), structured logging, Pydantic everywhere
 ✅ Test before commit, document APIs, keep docs synced
 ✅ Git: feature branches → develop → main
+✅ Rate-limit safe: 25% of Yahoo's hourly budget
 
-❌ No demos, redundancy, hardcoded values, working on main
+❌ No Indian stock data (use Kite), demos, redundancy, hardcoded values, working on main

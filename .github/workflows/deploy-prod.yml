@@ -1,0 +1,51 @@
+# Build 2/2: push to GHCR on merge to main. Prod (VM): ./deploy/run-prod.sh or pull + docker compose -f deploy/docker-compose.prod.yml up -d
+name: Build & Push Production
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/ashok1995/yahoo-services
+
+jobs:
+  build-push:
+    name: Build & Push to GHCR
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate file size limits (max 300 lines)
+        run: |
+          EXIT=0
+          for f in $(find api services config utils -name '*.py' -not -name '__init__.py'); do
+            LINES=$(wc -l < "$f")
+            if [ "$LINES" -gt 300 ]; then
+              echo "FAIL: $f has $LINES lines (max 300)"
+              EXIT=1
+            fi
+          done
+          exit $EXIT
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:main-${{ github.sha }}

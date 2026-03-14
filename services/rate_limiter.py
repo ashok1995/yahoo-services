@@ -29,10 +29,10 @@ class RateLimitStrategy(str, Enum):
 @dataclass
 class RateLimitConfig:
     """Rate limit configuration"""
-    daily_limit: int = 2000
-    hourly_limit: int = 100
-    minute_limit: int = 10
-    delay_between_requests: float = 1.0
+    daily_limit: int = 4000
+    hourly_limit: int = 180
+    minute_limit: int = 30
+    delay_between_requests: float = 0.5
     max_concurrent_requests: int = 20
     strategy: RateLimitStrategy = RateLimitStrategy.FIXED_DELAY
     retry_attempts: int = 3

@@ -1,5 +1,7 @@
 # Yahoo Services - Staging Deployment Guide
 
+**Canonical deployment (single source of truth):** [deploy/README.md](../../deploy/README.md)
+
 **Environment**: Staging  
 **Port**: 8285  
 **Purpose**: Pre-production testing before main deployment

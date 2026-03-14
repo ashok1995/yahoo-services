@@ -22,6 +22,7 @@ wheels/
 
 
 .venv
+venv/
 
 # Environment variables
 .env
@@ -34,6 +35,11 @@ wheels/
 *.swp
 *.swo
 *~
+
+# Cursor — track rules, ignore transient state
+!.cursorrules
+!.cursor/
+!.cursor/RULE.md
 
 # Logs
 logs/
