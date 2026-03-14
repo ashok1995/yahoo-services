@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # Cache TTLs (seconds)
     cache_ttl_global_context: int = Field(default=300, description="Global context cache TTL (5 min)")
     cache_ttl_fundamentals: int = Field(default=86400, description="Fundamentals cache TTL (1 day)")
+    cache_ttl_trends: int = Field(default=3600, description="Trend analysis cache TTL (1 hour — trends shift slowly)")
     
     def get_global_context_symbols(self) -> List[str]:
         """Parse global context symbols from comma-separated string."""

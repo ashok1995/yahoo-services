@@ -5,29 +5,58 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class TrendData(BaseModel):
+    """ML-ready trend metrics for a single timeframe horizon."""
+
+    roc: float = Field(..., description="Rate of change (%)")
+    slope_per_day: float = Field(..., description="Linear regression slope (%/day, normalized)")
+    r_squared: float = Field(..., description="Trend consistency (0-1, higher = cleaner trend)")
+    rsi: float = Field(..., description="Relative Strength Index (0-100)")
+    volatility_annualized: float = Field(..., description="Annualized return volatility (%)")
+    atr_pct: float = Field(..., description="Average True Range as % of price")
+    sma: float = Field(..., description="Simple Moving Average of close prices")
+    sma_distance_pct: float = Field(..., description="Price distance from SMA (%)")
+    period_high: float = Field(..., description="Highest price in window")
+    period_low: float = Field(..., description="Lowest price in window")
+    regime: str = Field(..., description="Trend regime: strong_bullish|bullish|weak_bullish|consolidating|weak_bearish|bearish|strong_bearish")
+    volatility_regime: str = Field(..., description="Volatility regime: low|normal|high|extreme")
+    candles_used: int = Field(..., description="Number of candles in this window")
+
+
+class TrendInfo(BaseModel):
+    """Multi-timeframe trend analysis. Cached with 1-hour TTL (separate from quote cache)."""
+
+    short_term: Optional[TrendData] = Field(None, description="5-day trend")
+    medium_term: Optional[TrendData] = Field(None, description="1-month (~22 trading days) trend")
+    long_term: Optional[TrendData] = Field(None, description="3-month trend")
+
+
 class MarketData(BaseModel):
     """Market data for a single asset."""
-    
+
     price: float = Field(..., description="Current price")
     change_percent: float = Field(..., description="Percentage change")
+    trend: Optional[TrendInfo] = Field(None, description="Multi-timeframe trend analysis")
 
 
 class ForexData(BaseModel):
     """Forex exchange rate data."""
-    
+
     rate: float = Field(..., description="Exchange rate")
     change_percent: float = Field(..., description="Percentage change")
+    trend: Optional[TrendInfo] = Field(None, description="Multi-timeframe trend analysis")
 
 
 class VIXData(BaseModel):
     """VIX volatility index data."""
-    
+
     value: float = Field(..., description="VIX value")
+    trend: Optional[TrendInfo] = Field(None, description="Multi-timeframe trend analysis")
 
 
 class GlobalContextResponse(BaseModel):
     """Response model for global context endpoint."""
-    
+
     sp500: MarketData = Field(..., description="S&P 500 index data")
     nasdaq: MarketData = Field(..., description="NASDAQ index data")
     dow_jones: MarketData = Field(..., description="Dow Jones index data")
@@ -36,17 +65,30 @@ class GlobalContextResponse(BaseModel):
     usd_inr: ForexData = Field(..., description="USD/INR exchange rate data")
     crude_oil: MarketData = Field(..., description="Crude oil futures data")
     timestamp: str = Field(..., description="Timestamp in ISO format")
-    
+
     class Config:
         json_schema_extra = {
             "example": {
-                "sp500": {"price": 5845.20, "change_percent": 0.45},
-                "nasdaq": {"price": 18234.50, "change_percent": 0.62},
-                "dow_jones": {"price": 44320.10, "change_percent": 0.28},
-                "vix": {"value": 13.45},
-                "gold": {"price": 2024.30, "change_percent": -0.15},
-                "usd_inr": {"rate": 83.25, "change_percent": 0.08},
-                "crude_oil": {"price": 78.45, "change_percent": 1.20},
+                "sp500": {
+                    "price": 5845.20, "change_percent": 0.45,
+                    "trend": {
+                        "short_term": {
+                            "roc": -2.41, "slope_per_day": -0.65, "r_squared": 0.87,
+                            "rsi": 38.5, "volatility_annualized": 10.3, "atr_pct": 1.12,
+                            "sma": 5870.5, "sma_distance_pct": -0.43,
+                            "period_high": 5920.0, "period_low": 5800.0,
+                            "regime": "bearish", "volatility_regime": "normal", "candles_used": 5
+                        },
+                        "medium_term": None,
+                        "long_term": None
+                    }
+                },
+                "nasdaq": {"price": 18234.50, "change_percent": 0.62, "trend": None},
+                "dow_jones": {"price": 44320.10, "change_percent": 0.28, "trend": None},
+                "vix": {"value": 13.45, "trend": None},
+                "gold": {"price": 2024.30, "change_percent": -0.15, "trend": None},
+                "usd_inr": {"rate": 83.25, "change_percent": 0.08, "trend": None},
+                "crude_oil": {"price": 78.45, "change_percent": 1.20, "trend": None},
                 "timestamp": "2026-02-12T14:30:00+05:30"
             }
         }

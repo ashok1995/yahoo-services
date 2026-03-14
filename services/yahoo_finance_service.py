@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from .cache_service import CacheService
 from .rate_limiter import RateLimiter
+from .trend_analyzer import analyze_candles
 
 logger = logging.getLogger(__name__)
 
@@ -376,6 +377,48 @@ class YahooFinanceService:
             logger.error(f"❌ Error getting quote for {symbol}: {e}")
             return None
     
+    async def get_trend_data(self, symbol: str, current_price: float,
+                            market: str = "US", use_cache: bool = True,
+                            cache_ttl: int = 3600) -> Optional[Dict[str, Dict[str, Any]]]:
+        """
+        Fetch 3-month daily candles and compute ML-ready trend analysis.
+
+        Uses ticker.history (lightweight endpoint, ~6.5x cheaper than ticker.info).
+        Single fetch provides all three horizons (5d / 1mo / 3mo).
+        Cached for 1 hour by default — trends don't shift within an hour.
+
+        Returns dict with keys: short_term, medium_term, long_term
+        Each contains: roc, slope_per_day, r_squared, rsi, volatility, regime, etc.
+        Returns None on failure (caller should still return quote without trends).
+        """
+        try:
+            cache_key = f"trend_{symbol}"
+            if use_cache:
+                cached = await self.cache_service.get("trend", cache_key)
+                if cached:
+                    return cached
+
+            result = await self._make_request("historical", symbol,
+                                              period="3mo", interval="1d", market=market)
+            if not result or not result.get("data"):
+                return None
+
+            rows = result["data"]
+            df = pd.DataFrame(rows)
+            for col in ("open", "high", "low", "close"):
+                if col in df.columns:
+                    df.rename(columns={col: col.capitalize()}, inplace=True)
+
+            trends = analyze_candles(df, current_price)
+            if trends and use_cache:
+                await self.cache_service.set("trend", cache_key, trends, ttl=cache_ttl)
+
+            return trends
+
+        except Exception as e:
+            logger.error(f"Error computing trend for {symbol}: {e}")
+            return None
+
     async def get_historical_data(self, symbol: str, period: str = "1y", interval: str = "1d", 
                                 market: str = "US", use_cache: bool = True) -> Optional[Dict[str, Any]]:
         """Get historical price data for a symbol"""

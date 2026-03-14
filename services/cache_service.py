@@ -27,6 +27,7 @@ class CacheConfig(BaseModel):
     # Cache TTLs (in seconds)
     global_context_ttl: int = 300  # 5 minutes
     fundamentals_ttl: int = 86400  # 1 day
+    trends_ttl: int = 3600  # 1 hour — trends don't shift fast
     
     # Cache settings
     max_cache_size: int = 10000
@@ -43,6 +44,7 @@ class CacheConfig(BaseModel):
             redis_password=os.getenv("REDIS_PASSWORD") or None,
             global_context_ttl=int(os.getenv("CACHE_TTL_GLOBAL_CONTEXT", "300")),
             fundamentals_ttl=int(os.getenv("CACHE_TTL_FUNDAMENTALS", "86400")),
+            trends_ttl=int(os.getenv("CACHE_TTL_TRENDS", "3600")),
             max_cache_size=int(os.getenv("MAX_CACHE_SIZE", "10000")),
             enable_compression=os.getenv("ENABLE_COMPRESSION", "false").lower() == "true"
         )
@@ -63,26 +65,24 @@ class CacheService:
         self.delete_count = 0
     
     async def initialize(self) -> None:
-        """Initialize the cache service"""
+        """Initialize the cache service. Non-fatal if Redis is unavailable."""
         try:
             logger.info("🔧 Initializing Cache Service...")
             
-            # Create Redis connection
             redis_url = f"redis://{self.config.redis_host}:{self.config.redis_port}/{self.config.redis_db}"
             if self.config.redis_password:
                 redis_url = f"redis://:{self.config.redis_password}@{self.config.redis_host}:{self.config.redis_port}/{self.config.redis_db}"
             
             self.redis_client = aioredis.from_url(redis_url)
             
-            # Test connection
             await self.redis_client.ping()
             
             self._initialized = True
             logger.info("✅ Cache Service initialized successfully")
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Cache Service: {e}")
-            raise
+            logger.warning(f"⚠️ Cache Service unavailable (running without cache): {e}")
+            self._initialized = False
     
     def _get_cache_key(self, data_type: str, identifier: str) -> str:
         """Generate cache key for data type and identifier"""
@@ -95,6 +95,7 @@ class CacheService:
             "global_context": self.config.global_context_ttl,
             "fundamental": self.config.fundamentals_ttl,
             "fundamentals": self.config.fundamentals_ttl,
+            "trend": self.config.trends_ttl,
         }
         return ttl_map.get(data_type, self.config.global_context_ttl)
     
@@ -258,7 +259,8 @@ class CacheService:
                     "redis_host": self.config.redis_host,
                     "redis_port": self.config.redis_port,
                     "redis_db": self.config.redis_db,
-                    "default_ttl": self.config.default_ttl,
+                    "global_context_ttl": self.config.global_context_ttl,
+                    "trends_ttl": self.config.trends_ttl,
                     "max_cache_size": self.config.max_cache_size
                 }
             }
