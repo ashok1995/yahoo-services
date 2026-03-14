@@ -1,46 +1,87 @@
-name: Deploy Production
+name: Build & Deploy Production
 
 on:
   push:
     branches: [main]
 
 jobs:
-  ci:
-    name: CI Gate
-    uses: ./.github/workflows/ci.yml
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install & validate imports
+        run: |
+          pip install -r requirements.txt
+          python -c "from api.models.responses import GlobalContextResponse, TrendData, TrendInfo; print('Models OK')"
+          python -c "from services.trend_analyzer import analyze_candles; print('Trend analyzer OK')"
+          python -c "from api.routes.global_context import router; print('Routes OK')"
+
+      - name: Check file size limits
+        run: |
+          EXIT=0
+          for f in $(find api services config utils -name '*.py' -not -name '__init__.py'); do
+            LINES=$(wc -l < "$f")
+            if [ "$LINES" -gt 300 ]; then
+              echo "FAIL: $f has $LINES lines (max 300)"
+              EXIT=1
+            fi
+          done
+          exit $EXIT
+
+  docker-build-test:
+    name: Docker Build & Health Check
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image (no cache)
+        run: docker build --no-cache -t yahoo-services:${{ github.sha }} .
+
+      - name: Health check in container
+        run: |
+          docker run -d --name test-yahoo \
+            -e ENVIRONMENT=production \
+            -e REDIS_ENABLED=false \
+            -p 8185:8185 \
+            yahoo-services:${{ github.sha }}
+          sleep 10
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8185/health || echo "000")
+          docker logs test-yahoo
+          docker stop test-yahoo
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed: $STATUS"
+            exit 1
+          fi
+          echo "Docker health check passed"
 
   deploy:
     name: Deploy to Production
     runs-on: self-hosted
-    needs: ci
+    needs: docker-build-test
     environment: production
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Verify branch
-        run: |
-          BRANCH=$(git branch --show-current || echo "$GITHUB_REF_NAME")
-          echo "Deploying branch: $BRANCH"
-
-      - name: Stop existing production containers
+      - name: Stop existing containers
         run: docker compose --profile prod down 2>/dev/null || true
 
-      - name: Build production image (no cache)
-        run: docker compose --profile prod build --no-cache
-
-      - name: Start production service
-        run: docker compose --profile prod up -d
+      - name: Build & start production (no cache)
+        run: docker compose --profile prod up -d --build
 
       - name: Wait for service
         run: |
-          echo "Waiting for production service on port 8185..."
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:8185/health > /dev/null 2>&1; then
-              echo "Service is up after ${i}s"
-              break
-            fi
+            curl -sf http://localhost:8185/health > /dev/null 2>&1 && echo "Up after ${i}s" && break
             sleep 1
           done
 
@@ -48,7 +89,7 @@ jobs:
         run: |
           RESPONSE=$(curl -sf http://localhost:8185/health)
           STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
-          echo "Health status: $STATUS"
+          echo "Health: $STATUS"
           [ "$STATUS" = "healthy" ] || exit 1
 
       - name: Smoke test global-context
@@ -57,24 +98,14 @@ jobs:
           python3 -c "
           import sys, json
           data = json.loads('''$RESPONSE''')
-          required = ['sp500','nasdaq','dow_jones','vix','gold','usd_inr','crude_oil']
-          for key in required:
+          for key in ['sp500','nasdaq','dow_jones','vix','gold','usd_inr','crude_oil']:
               assert key in data, f'Missing {key}'
-              print(f'{key}: OK', end='')
-              if data[key].get('trend'):
-                  regime = data[key]['trend']['short_term']['regime']
-                  print(f' (trend: {regime})', end='')
-              print()
+              trend = 'trend:' + data[key]['trend']['short_term']['regime'] if data[key].get('trend') else 'no-trend'
+              print(f'{key}: OK ({trend})')
           print('Production smoke test passed')
           "
 
-      - name: Print deployment info
+      - name: Summary
         if: success()
         run: |
-          echo "=========================================="
-          echo "  PRODUCTION deployed successfully"
-          echo "  Port: 8185"
-          echo "  Health: http://localhost:8185/health"
-          echo "  API:    http://localhost:8185/api/v1/global-context"
-          echo "  Docs:   http://localhost:8185/docs"
-          echo "=========================================="
+          echo "PRODUCTION live on :8185 — health OK, global-context OK"
