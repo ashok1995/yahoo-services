@@ -1,5 +1,7 @@
 # Yahoo Services Deployment Guide
 
+**Canonical deployment (single source of truth):** [deploy/README.md](../../deploy/README.md)
+
 ## Port Configuration
 
 | Environment | Port | Redis DB | Use Case |

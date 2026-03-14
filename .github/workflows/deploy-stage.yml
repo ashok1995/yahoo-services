@@ -1,6 +1,4 @@
-# Build 1/2: push to GHCR on merge to develop. Staging (local) runs same as prod flow:
-#   docker pull ghcr.io/ashok1995/yahoo-services:stage
-#   docker compose -f docker-compose.ghcr-stage.yml up -d
+# Build 1/2: push to GHCR on merge to develop. Staging (local): ./deploy/run-stage.sh or pull + docker compose -f deploy/docker-compose.stage.yml up -d
 name: Build & Push Staging
 
 on:
