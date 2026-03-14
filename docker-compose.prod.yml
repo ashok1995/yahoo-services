@@ -1,13 +1,12 @@
 # Docker Compose Production Configuration for Yahoo Services
 # Port: 8185 | Environment: production
-# Deployed on VM: 203.57.85.72
+# Image from GHCR (built by CI on push to main)
+# Deployed on VM: 203.57.85.201
 
 services:
   # Production Yahoo Services
   yahoo-services-prod:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/ashok1995/yahoo-services:main
     container_name: yahoo-services-prod
     ports:
       - "8185:8185"

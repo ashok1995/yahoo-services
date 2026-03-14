@@ -34,9 +34,11 @@ class Settings(BaseSettings):
     alpha_vantage_enabled: bool = Field(default=False, description="Enable Alpha Vantage")
     alpha_vantage_rate_limit: int = Field(default=5, description="Alpha Vantage rate limit (req/min)")
     
-    # Global context symbols
+    # Global context symbols (Yahoo Finance tickers)
+    # Only non-Kite data: US indices, VIX, commodities, USD/INR, Asian indices
+    # Nifty 50 / Bank Nifty come from Kite Connect
     global_context_symbols: str = Field(
-        default="^GSPC,^IXIC,^DJI,^VIX,GC=F,USDINR=X,CL=F",
+        default="^GSPC,^IXIC,^DJI,^VIX,GC=F,USDINR=X,CL=F,^N225,^HSI",
         description="Global context symbols (comma-separated)"
     )
     

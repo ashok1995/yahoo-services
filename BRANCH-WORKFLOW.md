@@ -64,22 +64,21 @@ curl http://localhost:8285/health | jq .
 - Review and merge the PR in the UI.
 - Do **not** run `git merge` or `git push origin main` from the command line.
 
-### 6. Deploy to **production (VM)** — only from `main` (no image transfer)
+### 6. CI & Deploy to **production (VM)**
 
-After the PR is merged to main:
+**CI (GitHub Actions):** On every push to `main`, the image is built and pushed to GHCR (`ghcr.io/ashok1995/yahoo-services:main`). Triggered by merge or direct push to main.
 
-- **From your Mac:** run `./deploy-vm-prod.sh` — it SSHs to the VM, then on the VM: **git pull origin main**, **build image there**, and start containers. No image is built or transferred from your machine.
-- **On the VM:** you can also run `./deploy-vm-prod.sh` from `/opt/yahoo-services` (same steps: pull main, build on VM, up).
+**Deploy (manual):**
+
+- **From your Mac:** run `./deploy-vm-prod.sh` — SSHs to VM, pulls compose from main, **pulls pre-built image from GHCR**, and starts containers.
+- **On the VM:** run `./deploy-vm-prod.sh` from `/opt/yahoo-services` (same steps).
 
 ```bash
-# From local (triggers VM to pull main + build on VM)
+# From local (VM pulls image from GHCR)
 ./deploy-vm-prod.sh
-
-# Optional: force full rebuild on VM
-./deploy-vm-prod.sh --no-cache
 ```
 
-- Production **always** uses **main** on the VM. The VM pulls main and builds the image on the VM for reliability (single source of truth: git).
+- For **private** GHCR package, set `GHCR_TOKEN` on the VM (GitHub PAT with `read:packages`).
 
 ---
 
@@ -105,6 +104,6 @@ feature/xxx  →  PR (UI) → develop  →  staging (:8285)  →  PR (UI) → ma
 
 ## Production health & firewall
 
-- **Health (from your Mac):** `curl http://203.57.85.72:8185/health`
+- **Health (from your Mac):** `curl http://203.57.85.201:8185/health`
 - If "Connection refused" or timeout: on the VM, ensure port **8185** is open (e.g. `ufw allow 8185` if using ufw, or open in cloud firewall).
 - On VM, health from inside: `curl -s http://localhost:8185/health | jq .`

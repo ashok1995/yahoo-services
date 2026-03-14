@@ -37,6 +37,8 @@ SYMBOL_MAP = {
     "GC=F": "gold",
     "USDINR=X": "usd_inr",
     "CL=F": "crude_oil",
+    "^N225": "nikkei",
+    "^HSI": "hang_seng",
 }
 
 
@@ -91,12 +93,10 @@ async def get_global_context(
     """
     Get global market context with multi-timeframe trend analysis.
 
-    Fetches S&P 500, NASDAQ, Dow Jones, VIX, Gold, USD/INR, and Crude Oil data.
+    Fetches S&P 500, NASDAQ, Dow Jones, VIX, Gold, USD/INR, Crude Oil; optional Asian (Nikkei, Hang Seng).
     Each asset includes optional trend analysis (short/medium/long term) with
     ML-ready metrics: ROC, regression slope, R², RSI, volatility, regime bins.
-
-    Quotes cached 5 min, trends cached 1 hour (separate lightweight API calls).
-    Trend failure never blocks the quote response.
+    Indian indices (Nifty, Bank Nifty) come from Kite. Quotes cached 5 min, trends 1 hr.
     """
     start_time = datetime.now()
 
@@ -104,7 +104,7 @@ async def get_global_context(
         symbols_str = settings.global_context_symbols
         symbols = [s.strip() for s in symbols_str.split(",")]
 
-        # ── Phase 1: Fetch all quotes concurrently ──
+        # SYMBOL_MAP already includes ^N225->nikkei, ^HSI->hang_seng when symbols list has them
         logger.info(f"Fetching global context for symbols: {symbols}")
         quote_tasks = [fetch_quote_data(yahoo_service, s) for s in symbols]
         quote_results = await asyncio.gather(*quote_tasks)

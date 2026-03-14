@@ -64,6 +64,8 @@ class GlobalContextResponse(BaseModel):
     gold: MarketData = Field(..., description="Gold futures data")
     usd_inr: ForexData = Field(..., description="USD/INR exchange rate data")
     crude_oil: MarketData = Field(..., description="Crude oil futures data")
+    nikkei: Optional[MarketData] = Field(None, description="Nikkei 225 - Asian session lead")
+    hang_seng: Optional[MarketData] = Field(None, description="Hang Seng - Asian session lead")
     timestamp: str = Field(..., description="Timestamp in ISO format")
 
     class Config:
@@ -89,6 +91,8 @@ class GlobalContextResponse(BaseModel):
                 "gold": {"price": 2024.30, "change_percent": -0.15, "trend": None},
                 "usd_inr": {"rate": 83.25, "change_percent": 0.08, "trend": None},
                 "crude_oil": {"price": 78.45, "change_percent": 1.20, "trend": None},
+                "nikkei": {"price": 38250.0, "change_percent": -0.22, "trend": None},
+                "hang_seng": {"price": 18500.0, "change_percent": 0.45, "trend": None},
                 "timestamp": "2026-02-12T14:30:00+05:30"
             }
         }
