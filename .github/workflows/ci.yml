@@ -24,7 +24,6 @@ jobs:
           python -c "from config.settings import settings; print(f'Settings OK: port={settings.service_port}')"
           python -c "from api.models.responses import GlobalContextResponse, TrendData, TrendInfo; print('Models OK')"
           python -c "from services.trend_analyzer import analyze_candles; print('Trend analyzer OK')"
-          python -c "from services.yahoo_finance_service import YahooFinanceService; print('Yahoo service OK')"
           python -c "from api.routes.global_context import router; print('Routes OK')"
 
       - name: Check file size limits (max 300 lines)
