@@ -35,6 +35,11 @@ wheels/
 *.swo
 *~
 
+# Cursor — track rules, ignore transient state
+!.cursorrules
+!.cursor/
+!.cursor/RULE.md
+
 # Logs
 logs/
 *.log

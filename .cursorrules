@@ -1,6 +1,23 @@
 # Yahoo-Services Master Rules
 
-Port: **8014** | Service: Data Kite cannot provide (US indices, commodities, forex, fundamentals)
+Port: **8014** | Service: Global/index market context ONLY (data Kite cannot provide)
+
+## 🚨 Service Scope — READ THIS FIRST
+
+**This service provides ONLY global/index market context:**
+- ✅ US/Global indices: S&P 500, NASDAQ, Dow Jones, VIX
+- ✅ Commodities: Gold, Crude Oil
+- ✅ Forex: USD/INR
+- ✅ Multi-timeframe trend analysis (short/medium/long term) for the above
+- ✅ Fundamentals: P/E, P/B, ROE, margins for NSE stocks (batch, weekly)
+
+**Indian market stock data is handled by Kite API — NOT this service:**
+- ❌ NSE/BSE stock quotes → Kite
+- ❌ NSE/BSE candles/OHLC → Kite
+- ❌ NSE/BSE live prices → Kite
+- ❌ Any per-stock Indian market data → Kite
+
+**Never add Indian stock quote/candle/price endpoints here. That is Kite's job.**
 
 ## 🚨 Critical Rules
 
@@ -17,14 +34,9 @@ Port: **8014** | Service: Data Kite cannot provide (US indices, commodities, for
 - ✅ Flow: feature/xxx → PR → develop (merge in UI) → staging → PR → main (merge in UI) → pull main, deploy VM
 - **main** = production VM only. **develop** = staging. All merges via GitHub UI.
 
-## Scope & Endpoints
+## Endpoints (Exactly 4 — no new endpoints without approval)
 
-**Zero Redundancy**: Only data Kite cannot provide
-- ✅ US indices (S&P, NASDAQ, VIX), commodities (Gold, Crude), forex (USD/INR), fundamentals
-- ❌ NSE/BSE quotes/candles (use Kite)
-
-**Exactly 4 Endpoints** (no new endpoints without approval):
-1. `GET /api/v1/global-context` — Primary (90% usage)
+1. `GET /api/v1/global-context` — Primary (90% usage), quotes + trend analysis
 2. `POST /api/v1/fundamentals/batch` — Weekly enrichment
 3. `GET /api/v1/alpha-vantage/global-context` — Fallback (optional)
 4. `GET /health` — Health check
@@ -60,19 +72,23 @@ Port: **8014** | Service: Data Kite cannot provide (US indices, commodities, for
 yahoo-services/
 ├── main.py
 ├── api/
-│   ├── routes/          # Thin controllers (call services only)
-│   └── models/          # Pydantic request/response models
-├── services/            # Business logic (stateless, reusable)
+│   ├── routes/              # Thin controllers (call services only)
+│   └── models/              # Pydantic request/response models
+├── services/
+│   ├── yahoo_finance_service.py  # Yahoo API client (quotes + candles)
+│   ├── trend_analyzer.py         # Pure computation: candles → ML-ready metrics
+│   ├── cache_service.py          # Redis caching
+│   └── rate_limiter.py           # Rate limiting
 ├── config/
-│   └── settings.py      # Centralized config (pydantic-settings)
+│   └── settings.py          # Centralized config (pydantic-settings)
 ├── utils/
 │   ├── logger.py
 │   └── exceptions.py
 ├── envs/
-│   └── env.dev          # Environment variables (NOT root .env)
-├── tests/               # Unit + integration tests
-├── logs/                # Log files (gitignored)
-└── docs/                # See documentation rules below
+│   └── env.dev              # Environment variables (NOT root .env)
+├── tests/                   # Unit + integration tests
+├── logs/                    # Log files (gitignored)
+└── docs/                    # See documentation rules below
 ```
 
 ## External API Integration
@@ -93,8 +109,22 @@ curl -s https://query1.finance.yahoo.com/v8/finance/chart/^GSPC
 
 ## Caching & Rate Limiting
 
-- Global context: 5 min | Fundamentals: 1 day
-- Yahoo: 100 req/min | Alpha Vantage: 5 req/min
+**Cache TTLs**
+- Quotes (global context): 5 min (300s)
+- Trend analysis: 1 hour (3600s) — trends shift slowly, keeps Yahoo calls minimal
+- Fundamentals: 1 day (86400s)
+
+**Yahoo Finance Rate Limits (unofficial, community-observed)**
+- 60 requests/minute, 360/hour, 8,000/day
+- `ticker.info` is ~6.5x heavier than `ticker.history` — prefer history where possible
+- Current budget: 91 calls/hour (84 quote + 7 trend) = 25% of hourly limit
+- **Never exceed 50% of Yahoo's hourly limit** — leave headroom for fundamentals + safety
+
+**Rate limit safety rules**
+- Trend data uses `ticker.history` (lightweight endpoint), NOT `ticker.info`
+- One 3-month candle fetch per symbol provides all 3 trend horizons (no extra calls)
+- Trend cache (1hr) is independent of quote cache (5min) — trend failure never blocks quotes
+- Alpha Vantage: 5 req/min (if configured)
 - Error fallback: cached data → Alpha Vantage → 503
 
 ## Documentation Rules
@@ -147,25 +177,33 @@ uvicorn main:app --host 0.0.0.0 --port 8014 --reload
 ❌ Non-relevant/orphan files
 ❌ Redundant Kite data fetching (use Kite for NSE/BSE)
 
-## Integration Response Format (DO NOT CHANGE)
+## Integration Response Format
 
-Called by seed-stocks-service every 5 min. Format MUST match:
+Called by seed-stocks-service every 5 min. Backward-compatible — `trend` is optional/nullable:
 ```json
 {
-  "sp500": {"price": 5845.20, "change_percent": 0.45},
-  "nasdaq": {"price": 18234.50, "change_percent": 0.62},
-  "dow_jones": {"price": 44320.10, "change_percent": 0.28},
-  "vix": {"value": 13.45},
-  "gold": {"price": 2024.30, "change_percent": -0.15},
-  "usd_inr": {"rate": 83.25, "change_percent": 0.08},
-  "crude_oil": {"price": 78.45, "change_percent": 1.20},
+  "sp500": {
+    "price": 5845.20, "change_percent": 0.45,
+    "trend": {
+      "short_term": {"roc": -2.41, "slope_per_day": -0.65, "r_squared": 0.87, "rsi": 38.5, "volatility_annualized": 10.3, "atr_pct": 1.12, "sma": 5870.5, "sma_distance_pct": -0.43, "period_high": 5920.0, "period_low": 5800.0, "regime": "bearish", "volatility_regime": "normal", "candles_used": 5},
+      "medium_term": {"...same fields..."},
+      "long_term": {"...same fields..."}
+    }
+  },
+  "vix": {"value": 13.45, "trend": {"..."}},
+  "usd_inr": {"rate": 83.25, "change_percent": 0.08, "trend": {"..."}},
   "timestamp": "2026-02-12T14:30:00+05:30"
 }
 ```
 
+**Trend regime values** (for ML consumption):
+`strong_bullish`, `bullish`, `weak_bullish`, `consolidating`, `weak_bearish`, `bearish`, `strong_bearish`
+
+**Volatility regime values**: `low`, `normal`, `high`, `extreme`
+
 ---
 
-✅ **Focus**: 4 endpoints, max efficiency, production-grade only
-❌ **Avoid**: Demos, redundancy, >300 LOC files, working on main
+✅ **Focus**: 4 endpoints, global/index context only, production-grade
+❌ **Avoid**: Indian stock data (use Kite), demos, redundancy, >300 LOC files, working on main
 
 See `.cursor/RULE.md` for detailed implementation guidance.
