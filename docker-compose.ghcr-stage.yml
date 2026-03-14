@@ -1,0 +1,43 @@
+# Staging from GHCR only (no build). Run: docker compose -f docker-compose.ghcr-stage.yml up -d
+# Login first if repo is private: docker login ghcr.io -u YOUR_GITHUB_USER -p YOUR_PAT
+services:
+  yahoo-services-stage:
+    image: ghcr.io/ashok1995/yahoo-services:stage
+    container_name: yahoo-services-stage
+    ports:
+      - "8285:8285"
+    environment:
+      - ENVIRONMENT=staging
+      - SERVICE_PORT=8285
+      - REDIS_HOST=redis-stage
+      - REDIS_PORT=6379
+      - REDIS_ENABLED=true
+    env_file:
+      - envs/env.stage
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - yahoo-network-stage
+    depends_on:
+      - redis-stage
+
+  redis-stage:
+    image: redis:7-alpine
+    container_name: yahoo-redis-stage
+    expose:
+      - "6379"
+    volumes:
+      - redis-data-stage:/data
+    restart: unless-stopped
+    networks:
+      - yahoo-network-stage
+    command: redis-server --appendonly yes
+
+networks:
+  yahoo-network-stage:
+    driver: bridge
+
+volumes:
+  redis-data-stage:
+    driver: local

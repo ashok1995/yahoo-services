@@ -1,6 +1,6 @@
-# Build and push production image to GHCR. Prod (VM) pulls and runs:
+# Build 2/2: push to GHCR on merge to main. Prod (VM) runs same as staging flow:
 #   docker pull ghcr.io/ashok1995/yahoo-services:latest
-#   docker compose --profile prod up -d  # or run the image with your env
+#   docker compose -f docker-compose.ghcr-prod.yml up -d
 name: Build & Push Production
 
 on:
