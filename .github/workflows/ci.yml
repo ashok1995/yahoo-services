@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  lint-and-validate:
+    name: Lint & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate imports
+        run: |
+          python -c "from config.settings import settings; print(f'Settings OK: port={settings.service_port}')"
+          python -c "from api.models.responses import GlobalContextResponse, TrendData, TrendInfo; print('Models OK')"
+          python -c "from services.trend_analyzer import analyze_candles; print('Trend analyzer OK')"
+          python -c "from services.yahoo_finance_service import YahooFinanceService; print('Yahoo service OK')"
+          python -c "from api.routes.global_context import router; print('Routes OK')"
+
+      - name: Check file size limits (max 300 lines)
+        run: |
+          EXIT=0
+          for f in $(find api services config utils -name '*.py' -not -name '__init__.py'); do
+            LINES=$(wc -l < "$f")
+            if [ "$LINES" -gt 300 ]; then
+              echo "FAIL: $f has $LINES lines (max 300)"
+              EXIT=1
+            fi
+          done
+          exit $EXIT
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t yahoo-services:${{ github.sha }} .
+
+      - name: Verify image runs
+        run: |
+          docker run -d --name test-yahoo \
+            -e ENVIRONMENT=development \
+            -e REDIS_ENABLED=false \
+            -p 8085:8085 \
+            yahoo-services:${{ github.sha }}
+          sleep 10
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8085/health || echo "000")
+          docker logs test-yahoo
+          docker stop test-yahoo
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed with status $STATUS"
+            exit 1
+          fi
+          echo "Health check passed"
+
+  smoke-test:
+    name: Smoke Test (Live Yahoo)
+    runs-on: ubuntu-latest
+    needs: [lint-and-validate, docker-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Test trend analyzer with live data
+        run: |
+          python -c "
+          import yfinance as yf
+          from services.trend_analyzer import analyze_candles
+
+          ticker = yf.Ticker('^GSPC')
+          hist = ticker.history(period='3mo', interval='1d')
+          price = float(hist['Close'].iloc[-1])
+          trends = analyze_candles(hist, price)
+
+          assert trends is not None, 'analyze_candles returned None'
+          for h in ['short_term', 'medium_term', 'long_term']:
+              assert h in trends, f'Missing horizon: {h}'
+              t = trends[h]
+              assert 'roc' in t, f'Missing roc in {h}'
+              assert 'regime' in t, f'Missing regime in {h}'
+              assert t['regime'] in [
+                  'strong_bullish','bullish','weak_bullish',
+                  'consolidating',
+                  'weak_bearish','bearish','strong_bearish'
+              ], f'Invalid regime: {t[\"regime\"]}'
+              print(f'{h}: regime={t[\"regime\"]}, roc={t[\"roc\"]:+.2f}%')
+
+          print('All smoke tests passed')
+          "
