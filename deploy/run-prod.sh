@@ -5,6 +5,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 COMPOSE_FILE="deploy/docker-compose.prod.yml"
 IMAGE="ghcr.io/ashok1995/yahoo-services:latest"
+echo "Stopping and removing existing production containers..."
+docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
 echo "Pulling $IMAGE..."
 docker pull "$IMAGE"
 echo "Starting production (port 8185)..."
