@@ -14,6 +14,18 @@ jobs:
         with:
           ref: main
 
+      - name: Validate file size limits (max 300 lines)
+        run: |
+          EXIT=0
+          for f in $(find api services config utils -name '*.py' -not -name '__init__.py'); do
+            LINES=$(wc -l < "$f")
+            if [ "$LINES" -gt 300 ]; then
+              echo "FAIL: $f has $LINES lines (max 300)"
+              EXIT=1
+            fi
+          done
+          exit $EXIT
+
       - name: Stop existing containers
         run: docker compose --profile prod down 2>/dev/null || true
 
