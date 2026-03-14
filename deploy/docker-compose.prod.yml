@@ -1,0 +1,43 @@
+# Production: GHCR image only (no build). Run from repo root on VM: docker compose -f deploy/docker-compose.prod.yml up -d
+# Image pushed on merge to main. Login if private: docker login ghcr.io -u USER -p PAT
+services:
+  yahoo-services-prod:
+    image: ghcr.io/ashok1995/yahoo-services:latest
+    container_name: yahoo-services-prod
+    ports:
+      - "8185:8185"
+    environment:
+      - ENVIRONMENT=production
+      - SERVICE_PORT=8185
+      - REDIS_HOST=redis-prod
+      - REDIS_PORT=6379
+      - REDIS_ENABLED=true
+    env_file:
+      - ../envs/env.prod
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - yahoo-network-prod
+    depends_on:
+      - redis-prod
+
+  redis-prod:
+    image: redis:7-alpine
+    container_name: yahoo-redis-prod
+    expose:
+      - "6379"
+    volumes:
+      - redis-data-prod:/data
+    restart: unless-stopped
+    networks:
+      - yahoo-network-prod
+    command: redis-server --appendonly yes
+
+networks:
+  yahoo-network-prod:
+    driver: bridge
+
+volumes:
+  redis-data-prod:
+    driver: local
