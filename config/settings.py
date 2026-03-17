@@ -47,7 +47,10 @@ class Settings(BaseSettings):
     redis_enabled: bool = Field(default=True, description="Enable Redis caching")
     
     # Cache TTLs (seconds)
-    cache_ttl_global_context: int = Field(default=300, description="Global context cache TTL (5 min)")
+    # Quote TTL derived from rate limit: 180 req/hr budget, 9 trend fetches/hr fixed cost
+    # → 171 remaining / 9 symbols = 19 refreshes/symbol/hr → TTL = 3600/19 ≈ 190s
+    # 200s gives 18 refreshes/symbol/hr (162 quotes + 9 trends = 171/hr), ~5% headroom
+    cache_ttl_global_context: int = Field(default=200, description="Global context quote cache TTL (200s — rate-limit optimal)")
     cache_ttl_fundamentals: int = Field(default=86400, description="Fundamentals cache TTL (1 day)")
     cache_ttl_trends: int = Field(default=3600, description="Trend analysis cache TTL (1 hour — trends shift slowly)")
     

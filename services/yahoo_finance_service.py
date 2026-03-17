@@ -106,47 +106,58 @@ class YahooFinanceService:
 
     async def _make_request(self, operation: str, symbol: str, **kwargs) -> Optional[Dict[str, Any]]:
         """Rate-limited request dispatcher."""
+        permit_acquired = await self.rate_limiter.acquire_permit()
+        if not permit_acquired:
+            logger.warning(f"Rate limit exceeded for {symbol}, request blocked")
+            self.total_requests += 1
+            self.failed_requests += 1
+            return None
         try:
-            permit_acquired = await self.rate_limiter.acquire_permit()
-            if not permit_acquired:
-                raise Exception("Rate limit exceeded")
-            try:
-                await self.rate_limiter.wait_if_needed()
-                yahoo_symbol = self._convert_symbol(symbol, kwargs.pop("market", "US"))
-                ticker = yf.Ticker(yahoo_symbol)
+            await self.rate_limiter.wait_if_needed()
+            yahoo_symbol = self._convert_symbol(symbol, kwargs.pop("market", "US"))
+            ticker = yf.Ticker(yahoo_symbol)
 
-                extractor = _EXTRACTORS.get(operation)
-                if extractor is None:
-                    raise ValueError(f"Unknown operation: {operation}")
-                result = await extractor(ticker, symbol, **kwargs)
+            extractor = _EXTRACTORS.get(operation)
+            if extractor is None:
+                raise ValueError(f"Unknown operation: {operation}")
+            result = await extractor(ticker, symbol, **kwargs)
 
-                await self.rate_limiter.record_request(success=True)
-                self.total_requests += 1
-                self.successful_requests += 1
-                return result
-            finally:
-                self.rate_limiter.release_permit()
+            await self.rate_limiter.record_request(success=True)
+            self.total_requests += 1
+            self.successful_requests += 1
+            return result
         except Exception as e:
             await self.rate_limiter.record_request(success=False)
             self.total_requests += 1
             self.failed_requests += 1
             logger.error(f"Request failed for {symbol}: {e}")
             return None
+        finally:
+            self.rate_limiter.release_permit()
 
     async def _cached_request(
         self, cache_type: str, cache_key: str, operation: str,
         symbol: str, use_cache: bool = True, **kwargs,
     ) -> Optional[Dict[str, Any]]:
-        """Check cache → make request → store result. Shared by all public accessors."""
+        """Check cache → make request → store result. Falls back to stale data on failure."""
         try:
             if use_cache:
                 cached = await self.cache_service.get(cache_type, cache_key)
                 if cached:
                     return cached
             result = await self._make_request(operation, symbol, **kwargs)
-            if result and use_cache:
-                await self.cache_service.set(cache_type, cache_key, result)
-            return result
+            if result:
+                if use_cache:
+                    await self.cache_service.set(cache_type, cache_key, result)
+                    await self.cache_service.set_stale(cache_type, cache_key, result)
+                return result
+            # Live fetch failed — serve stale data to avoid blackout
+            if use_cache:
+                stale = await self.cache_service.get_stale(cache_type, cache_key)
+                if stale:
+                    logger.warning(f"Serving stale cache for {cache_key} (live fetch unavailable)")
+                    return stale
+            return None
         except Exception as e:
             logger.error(f"Error getting {cache_type} for {symbol}: {e}")
             return None
