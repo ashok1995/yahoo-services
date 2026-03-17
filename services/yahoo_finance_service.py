@@ -139,16 +139,25 @@ class YahooFinanceService:
         self, cache_type: str, cache_key: str, operation: str,
         symbol: str, use_cache: bool = True, **kwargs,
     ) -> Optional[Dict[str, Any]]:
-        """Check cache → make request → store result. Shared by all public accessors."""
+        """Check cache → make request → store result. Falls back to stale data on failure."""
         try:
             if use_cache:
                 cached = await self.cache_service.get(cache_type, cache_key)
                 if cached:
                     return cached
             result = await self._make_request(operation, symbol, **kwargs)
-            if result and use_cache:
-                await self.cache_service.set(cache_type, cache_key, result)
-            return result
+            if result:
+                if use_cache:
+                    await self.cache_service.set(cache_type, cache_key, result)
+                    await self.cache_service.set_stale(cache_type, cache_key, result)
+                return result
+            # Live fetch failed — serve stale data to avoid blackout
+            if use_cache:
+                stale = await self.cache_service.get_stale(cache_type, cache_key)
+                if stale:
+                    logger.warning(f"Serving stale cache for {cache_key} (live fetch unavailable)")
+                    return stale
+            return None
         except Exception as e:
             logger.error(f"Error getting {cache_type} for {symbol}: {e}")
             return None

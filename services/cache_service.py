@@ -87,6 +87,10 @@ class CacheService:
     def _get_cache_key(self, data_type: str, identifier: str) -> str:
         """Generate cache key for data type and identifier"""
         return f"yahoo:{data_type}:{identifier}"
+
+    def _get_stale_key(self, data_type: str, identifier: str) -> str:
+        """Generate stale fallback cache key (long TTL)"""
+        return f"yahoo:stale:{data_type}:{identifier}"
     
     def _get_ttl(self, data_type: str) -> int:
         """Get TTL for data type"""
@@ -152,6 +156,33 @@ class CacheService:
             logger.error(f"❌ Error setting cache: {e}")
             return False
     
+    async def get_stale(self, data_type: str, identifier: str) -> Optional[Dict[str, Any]]:
+        """Get stale fallback data (long-lived copy, served when live fetch fails)."""
+        try:
+            if not self._initialized:
+                return None
+            stale_key = self._get_stale_key(data_type, identifier)
+            cached_data = await self.redis_client.get(stale_key)
+            if cached_data:
+                logger.debug(f"⚠️ Stale cache hit for {stale_key}")
+                return json.loads(cached_data)
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error getting stale cache: {e}")
+            return None
+
+    async def set_stale(self, data_type: str, identifier: str, data: Dict[str, Any], ttl: int = 7200) -> bool:
+        """Store a long-lived stale copy (default 2h). Updated whenever fresh data is fetched."""
+        try:
+            if not self._initialized:
+                return False
+            stale_key = self._get_stale_key(data_type, identifier)
+            await self.redis_client.setex(stale_key, ttl, json.dumps(data))
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error setting stale cache: {e}")
+            return False
+
     async def delete(self, data_type: str, identifier: str) -> bool:
         """Delete data from cache"""
         try:
