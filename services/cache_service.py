@@ -25,7 +25,9 @@ class CacheConfig(BaseModel):
     redis_password: Optional[str] = None
     
     # Cache TTLs (in seconds)
-    global_context_ttl: int = 300  # 5 minutes
+    # 200s = rate-limit-optimal: 9 symbols × 18 refreshes/hr = 162 quote req/hr
+    # + 9 trend req/hr = 171/hr total, within 180/hr limit with ~5% headroom
+    global_context_ttl: int = 200
     fundamentals_ttl: int = 86400  # 1 day
     trends_ttl: int = 3600  # 1 hour — trends don't shift fast
     
@@ -42,7 +44,7 @@ class CacheConfig(BaseModel):
             redis_port=int(os.getenv("REDIS_PORT", "6379")),
             redis_db=int(os.getenv("REDIS_DB", "3")),
             redis_password=os.getenv("REDIS_PASSWORD") or None,
-            global_context_ttl=int(os.getenv("CACHE_TTL_GLOBAL_CONTEXT", "300")),
+            global_context_ttl=int(os.getenv("CACHE_TTL_GLOBAL_CONTEXT", "200")),
             fundamentals_ttl=int(os.getenv("CACHE_TTL_FUNDAMENTALS", "86400")),
             trends_ttl=int(os.getenv("CACHE_TTL_TRENDS", "3600")),
             max_cache_size=int(os.getenv("MAX_CACHE_SIZE", "10000")),
