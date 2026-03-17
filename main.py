@@ -12,6 +12,8 @@ Port: 8014
 """
 
 import asyncio
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, Any
@@ -112,6 +114,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Log every request with a unique ID, client info, and timing."""
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+    client_id = request.headers.get("X-Client-ID", "unknown")
+
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = round((time.time() - start) * 1000, 2)
+
+    logger.info(
+        f"{request.method} {request.url.path} {response.status_code} {duration_ms}ms",
+        extra={
+            "context": {
+                "request_id": request_id,
+                "client_id": client_id,
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+            }
+        },
+    )
+
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 # Dependency injection for routes
